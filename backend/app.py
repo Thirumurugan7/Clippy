@@ -1,4 +1,4 @@
-"""ClipForge FastAPI application.
+"""Clippy FastAPI application.
 
 M0 scope only:
 - POST /api/upload         : receive and store a real video, enqueue a probe job
@@ -34,7 +34,7 @@ DEFAULT_SETTINGS = {
     "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
 }
 
-app = FastAPI(title="ClipForge", version="0.1.0")
+app = FastAPI(title="Clippy", version="0.1.0")
 
 # Vite dev server runs on a different origin during development.
 app.add_middleware(
