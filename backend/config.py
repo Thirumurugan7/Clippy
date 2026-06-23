@@ -20,6 +20,9 @@ INPUT_DIR = DATA_DIR / "input"
 UPLOADS_DIR = DATA_DIR / "uploads"
 # Where edited / rendered outputs are written.
 EXPORTS_DIR = DATA_DIR / "exports"
+# Local ML model assets (e.g. the mediapipe face detector).
+MODELS_DIR = DATA_DIR / "models"
+FACE_MODEL_PATH = MODELS_DIR / "blaze_face_short_range.tflite"
 # SQLite database file.
 DB_DIR = DATA_DIR / "db"
 DB_PATH = Path(os.environ.get("CLIPFORGE_DB_PATH", DB_DIR / "clipforge.db"))

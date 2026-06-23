@@ -148,6 +148,10 @@ button:disabled { opacity: .45; cursor: default; }
 
 /* ---------- export panel ---------- */
 .export-panel { background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; flex-shrink: 0; }
+.vertical-result {
+  display: block; margin: 10px auto 0; max-height: 70vh; aspect-ratio: 9 / 16;
+  background: #000; border-radius: var(--r); border: 1px solid var(--line);
+}
 
 /* ---------- highlights rail ---------- */
 .rail {

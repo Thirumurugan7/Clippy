@@ -358,11 +358,22 @@ def export_edit(video_id: str) -> dict:
     return {"job_id": job_id}
 
 
+@app.post("/api/videos/{video_id}/export_vertical")
+def export_vertical(video_id: str) -> dict:
+    """Enqueue a 9:16 vertical export: face-tracked reframe + burned captions."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="export_vertical")
+    return {"job_id": job_id}
+
+
 @app.get("/api/exports/{job_id}/file")
 def get_export_file(job_id: str, request: Request):
     """Stream an exported edited video (range-capable for the player)."""
     job = db.get_job(job_id)
-    if job is None or job["type"] != "export_edit":
+    if job is None or job["type"] not in ("export_edit", "export_vertical"):
         raise HTTPException(status_code=404, detail="export job not found")
     if job["status"] != "done" or not job["result_json"]:
         raise HTTPException(status_code=409, detail=f"export not ready (status={job['status']})")

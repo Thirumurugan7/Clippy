@@ -103,30 +103,33 @@ function EditorInner({ videoId, duration }) {
     setTimeout(() => seek(0), 0);
   }
 
-  async function doExport() {
-    setExportState({ status: "saving", jobId: null, result: null });
+  async function runExport(kind) {
+    setExportState({ status: "saving", kind, jobId: null, result: null });
     await fetch(`/api/videos/${videoId}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segments: edl }),
     });
-    const res = await fetch(`/api/videos/${videoId}/export`, { method: "POST" });
+    const path = kind === "v" ? "export_vertical" : "export";
+    const res = await fetch(`/api/videos/${videoId}/${path}`, { method: "POST" });
     const { job_id } = await res.json();
     (function pollJob() {
       fetch(`/api/jobs/${job_id}`)
         .then((r) => r.json())
         .then((job) => {
           if (job.status === "done") {
-            setExportState({ status: "done", jobId: job_id, result: JSON.parse(job.result_json) });
+            setExportState({ status: "done", kind, jobId: job_id, result: JSON.parse(job.result_json) });
           } else if (job.status === "failed") {
-            setExportState({ status: "failed", jobId: job_id, error: job.error });
+            setExportState({ status: "failed", kind, jobId: job_id, error: job.error });
           } else {
-            setExportState({ status: job.status, jobId: job_id, result: null });
+            setExportState({ status: job.status, kind, jobId: job_id, result: null });
             setTimeout(pollJob, 1500);
           }
         });
     })();
   }
+  const doExport = () => runExport("h");
+  const doExportVertical = () => runExport("v");
 
   if (!edl) return <div className="loading-shell mono">Loading editor…</div>;
   const exporting = exportState && !["done", "failed"].includes(exportState.status);
@@ -148,6 +151,7 @@ function EditorInner({ videoId, duration }) {
             onSplit={splitAtPlayhead}
             onDetectFillers={detectFillers}
             onExport={doExport}
+            onExportVertical={doExportVertical}
             undo={undo}
             redo={redo}
             canUndo={canUndo}
@@ -170,7 +174,25 @@ function EditorInner({ videoId, duration }) {
               {exportState.status === "failed" ? (
                 <span className="error">Export failed: {exportState.error}</span>
               ) : exportState.status !== "done" ? (
-                <p className="mono">Rendering your clip… ({exportState.status})</p>
+                <p className="mono">
+                  {exportState.kind === "v"
+                    ? "Rendering 9:16 short — face tracking + captions, this takes a bit…"
+                    : "Rendering your clip…"}{" "}
+                  ({exportState.status})
+                </p>
+              ) : exportState.kind === "v" ? (
+                <>
+                  <p className="mono">
+                    9:16 short · {exportState.result.width}×{exportState.result.height} ·{" "}
+                    {exportState.result.duration}s ·{" "}
+                    {exportState.result.face_tracked ? "face-tracked" : "center crop (no face)"}
+                  </p>
+                  <video
+                    src={`/api/exports/${exportState.jobId}/file`}
+                    controls
+                    className="vertical-result"
+                  />
+                </>
               ) : (
                 <>
                   <p className="mono">
