@@ -366,6 +366,36 @@ def export_edit(video_id: str) -> dict:
     return {"job_id": job_id}
 
 
+class AiEditBody(BaseModel):
+    prompt: str
+
+
+@app.post("/api/videos/{video_id}/ai_edit")
+def start_ai_edit(video_id: str, body: AiEditBody) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="ai_edit", params_json=json.dumps({"prompt": body.prompt}))
+    return {"job_id": job_id}
+
+
+@app.get("/api/videos/{video_id}/ai_edit")
+def get_ai_edit(video_id: str) -> dict:
+    row = db.get_ai_edit(video_id)
+    if row is None:
+        return {"ready": False}
+    return {
+        "ready": True,
+        "clip": json.loads(row["clip_json"]) if row["clip_json"] else None,
+        "aspect": row["aspect"],
+        "caption_preset": row["caption_preset"],
+        "reason": row["reason"],
+        "raw": row["raw"],
+        "error": row["error"],
+    }
+
+
 class SettingsBody(BaseModel):
     aspect: str
     framing: str

@@ -21,38 +21,36 @@ import cv2
 
 from backend import db, config
 from backend.edl import ordered_intervals, project_words, virtual_to_source, cx_at
+from backend.crop import compute_crop, target_dims
 from backend.captions import CaptionRenderer
+from backend.presets import resolve_caption_style
 from worker.steps.export_edit import render_segments, _bin, _probe_duration
 from worker.steps.reframe import run_reframe
 
 warnings.filterwarnings("ignore")
 
-TARGET_W, TARGET_H = 1080, 1920
 SMOOTH_ALPHA = 0.2  # EMA over the per-frame centre to keep the pan smooth
 
+DEFAULT_SETTINGS = {
+    "aspect": "9:16", "framing": "auto", "crop_cx": 0.5,
+    "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
+}
 
-def _reframe_and_caption(in_path, out_path, renderer, centers, segments) -> dict:
-    """Crop the edited intermediate to 9:16 following the precomputed face
-    trajectory (mapped via the EDL), draw captions, and mux audio. No detection
-    here — the trajectory comes from the shared reframe analysis, so the export
-    matches the live preview exactly.
+
+def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx) -> dict:
+    """Crop the edited intermediate to the chosen aspect, following the
+    precomputed face trajectory (auto) or a fixed centre (manual), draw captions,
+    and mux audio. Same trajectory as the live preview, so export == preview.
     """
     cap = cv2.VideoCapture(in_path)
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-
-    crop_w = round(H * TARGET_W / TARGET_H)
-    if crop_w <= W:
-        crop_h = H
-    else:
-        crop_w = W
-        crop_h = round(W * TARGET_H / TARGET_W)
-    y0 = max(0, (H - crop_h) // 2)
+    tw, th = target_dims(aspect)
 
     ff = subprocess.Popen(
         [_bin("ffmpeg"), "-y",
-         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{TARGET_W}x{TARGET_H}",
+         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{tw}x{th}",
          "-r", f"{fps}", "-i", "-",
          "-i", in_path,
          "-map", "0:v:0", "-map", "1:a:0?", "-shortest",
@@ -62,18 +60,21 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments) -> dict
     )
     assert ff.stdin is not None
 
-    center_x = W / 2.0
+    cur_cx = crop_cx if framing == "manual" else 0.5
     total = 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
         vt = total / fps
-        src_t = virtual_to_source(segments, vt)
-        target = cx_at(centers, src_t) * W if centers else W / 2.0
-        center_x += SMOOTH_ALPHA * (target - center_x)
-        x0 = int(min(max(center_x - crop_w / 2.0, 0), W - crop_w))
-        out = cv2.resize(frame[y0:y0 + crop_h, x0:x0 + crop_w], (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
+        if framing == "manual":
+            cur_cx = crop_cx
+        else:
+            src_t = virtual_to_source(segments, vt)
+            target = cx_at(centers, src_t) if centers else 0.5
+            cur_cx += SMOOTH_ALPHA * (target - cur_cx)
+        sx, sy, cw, ch = compute_crop(W, H, aspect, cur_cx)
+        out = cv2.resize(frame[sy:sy + ch, sx:sx + cw], (tw, th), interpolation=cv2.INTER_AREA)
         if renderer is not None:
             out = renderer.draw(out, vt)
         try:
@@ -87,7 +88,7 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments) -> dict
     ff.wait()
     if ff.returncode != 0:
         raise RuntimeError(f"ffmpeg reframe mux failed: {ff.stderr.read().decode()[-1200:]}")
-    return {"frames": total}
+    return {"frames": total, "width": tw, "height": th}
 
 
 def run_vertical_export(job) -> dict:
@@ -115,6 +116,15 @@ def run_vertical_export(job) -> dict:
     intermediate = out_dir / f"{job['id']}_edit.mp4"
     final = out_dir / f"{job['id']}_vertical.mp4"
 
+    # Settings drive aspect / framing / captions.
+    srow = db.get_settings(video_id)
+    settings = json.loads(srow["json"]) if srow else DEFAULT_SETTINGS
+    aspect = settings.get("aspect", "9:16")
+    framing = settings.get("framing", "auto")
+    crop_cx = float(settings.get("crop_cx", 0.5))
+    style = resolve_caption_style(settings.get("caption"))
+    tw, th = target_dims(aspect)
+
     # Face-track trajectory (shared with the live preview); compute if missing.
     reframe_path = out_dir / "reframe.json"
     if not reframe_path.exists():
@@ -128,20 +138,20 @@ def run_vertical_export(job) -> dict:
     # 2. captions on the edited timeline
     words = json.loads(tr["words_json"])
     projected = project_words(segments, words)
-    style = {k: params[k] for k in ("fontsize", "primary", "margin_v", "max_words") if k in params}
-    renderer = CaptionRenderer(projected, **style) if projected else None
+    renderer = CaptionRenderer(projected, width=tw, height=th, style=style) if projected else None
 
-    # 3. crop (precomputed trajectory) + caption + mux
-    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments)
+    # 3. crop (aspect + trajectory/manual) + caption + mux
+    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments, aspect, framing, crop_cx)
     intermediate.unlink(missing_ok=True)
 
     out_duration = _probe_duration(str(final))
     return {
         "output_path": str(final),
-        "width": TARGET_W,
-        "height": TARGET_H,
+        "width": tw,
+        "height": th,
+        "aspect": aspect,
         "duration": round(out_duration, 3),
-        "face_tracked": rf.get("tracked", False),
+        "face_tracked": rf.get("tracked", False) and framing == "auto",
         "face_rate": rf.get("face_rate", 0.0),
         "num_caption_words": len(projected),
     }

@@ -26,6 +26,8 @@ from worker.steps.waveform import run_waveform
 from worker.steps.highlights import run_highlights_job
 from worker.steps.vertical import run_vertical_export
 from worker.steps.reframe import run_reframe
+from worker.steps.ai_edit import run_ai_edit_job
+import json as _json
 
 POLL_INTERVAL_SECONDS = 1.0
 
@@ -37,6 +39,7 @@ HANDLERS = {
     "waveform": lambda job: run_waveform(job["video_id"]),
     "highlights": lambda job: run_highlights_job(job["video_id"]),
     "reframe": lambda job: run_reframe(job["video_id"]),
+    "ai_edit": lambda job: run_ai_edit_job(job["video_id"], _json.loads(job["params_json"] or "{}").get("prompt", "")),
     "export_edit": run_export_edit,
     "export_vertical": run_vertical_export,
 }
