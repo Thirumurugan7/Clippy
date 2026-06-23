@@ -13,19 +13,24 @@ inserts a queued job row; the separate worker process does the ffprobe work.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from . import config, db
+from . import auth, config, db
 from .edl import validate_edl
 from .fillers import detect_fillers
 from .presets import ASPECTS, CAPTION_PRESETS
+
+COOKIE = "clippy_session"
+_VIDEO_PATH = re.compile(r"^/api/videos/([0-9a-f]+)")
+_EXPORT_PATH = re.compile(r"^/api/exports/([0-9a-f]+)")
 
 DEFAULT_SETTINGS = {
     "aspect": "9:16",
@@ -40,6 +45,7 @@ app = FastAPI(title="Clippy", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -52,11 +58,91 @@ ALLOWED_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
 def _startup() -> None:
     config.ensure_dirs()
     db.init_db()
+    auth.ensure_admin()
+
+
+@app.middleware("http")
+async def auth_and_ownership(request: Request, call_next):
+    """Require a valid session for every /api route except auth + health, and
+    enforce that a /api/videos/{id}... or /api/exports/{job}... path belongs to
+    the signed-in user. Centralizes per-user isolation in one place."""
+    path = request.url.path
+    needs_auth = (
+        path.startswith("/api/")
+        and not path.startswith("/api/auth/")
+        and path != "/api/health"
+    )
+    if needs_auth:
+        user = auth.user_for_token(request.cookies.get(COOKIE))
+        if user is None:
+            return JSONResponse({"detail": "not authenticated"}, status_code=401)
+        request.state.user = user
+        m = _VIDEO_PATH.match(path)
+        if m:
+            v = db.get_video(m.group(1))
+            if v is None or v["owner_id"] != user["id"]:
+                return JSONResponse({"detail": "video not found"}, status_code=404)
+        m = _EXPORT_PATH.match(path)
+        if m:
+            job = db.get_job(m.group(1))
+            v = db.get_video(job["video_id"]) if job else None
+            if v is None or v["owner_id"] != user["id"]:
+                return JSONResponse({"detail": "export not found"}, status_code=404)
+    return await call_next(request)
 
 
 @app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
+
+
+# --------------------------------------------------------------------------- #
+# Auth
+# --------------------------------------------------------------------------- #
+class AuthBody(BaseModel):
+    email: str
+    password: str
+
+
+def _set_session(response: Response, user_id: str) -> None:
+    token = auth.new_session(user_id)
+    response.set_cookie(COOKIE, token, httponly=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+
+
+@app.post("/api/auth/register")
+def auth_register(body: AuthBody, response: Response) -> dict:
+    try:
+        user_id = auth.register(body.email, body.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    _set_session(response, user_id)
+    return {"email": body.email.strip().lower()}
+
+
+@app.post("/api/auth/login")
+def auth_login(body: AuthBody, response: Response) -> dict:
+    user_id = auth.authenticate(body.email, body.password)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="invalid email or password")
+    _set_session(response, user_id)
+    return {"email": body.email.strip().lower()}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response) -> dict:
+    token = request.cookies.get(COOKIE)
+    if token:
+        db.delete_session(token)
+    response.delete_cookie(COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(request: Request) -> dict:
+    user = auth.user_for_token(request.cookies.get(COOKIE))
+    if user is None:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    return {"email": user["email"]}
 
 
 def _job_to_dict(row) -> dict:
@@ -91,12 +177,13 @@ def _video_to_dict(row) -> dict:
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...)) -> dict:
-    """Store an uploaded video on disk and enqueue a probe job.
+async def upload(request: Request, file: UploadFile = File(...)) -> dict:
+    """Store an uploaded video on disk (under the owner's dir) and enqueue jobs.
 
     The file is streamed to disk in chunks so a multi-GB upload does not get
     buffered entirely in memory.
     """
+    owner_id = request.state.user["id"]
     original_name = file.filename or "upload"
     suffix = Path(original_name).suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
@@ -106,7 +193,7 @@ async def upload(file: UploadFile = File(...)) -> dict:
         )
 
     video_id = uuid.uuid4().hex
-    dest_dir = config.UPLOADS_DIR / video_id
+    dest_dir = config.UPLOADS_DIR / owner_id / video_id
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / original_name
 
@@ -126,9 +213,9 @@ async def upload(file: UploadFile = File(...)) -> dict:
     # Record the video using the id we already used for its directory.
     with db.get_conn() as conn:
         conn.execute(
-            """INSERT INTO videos (id, original_filename, stored_path, size_bytes, created_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (video_id, original_name, str(dest_path), size_bytes, time.time()),
+            """INSERT INTO videos (id, original_filename, stored_path, size_bytes, created_at, owner_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (video_id, original_name, str(dest_path), size_bytes, time.time(), owner_id),
         )
 
     # Enqueue probe (metadata) then transcription. The worker runs them in
@@ -156,14 +243,18 @@ def get_video(video_id: str) -> dict:
 
 
 @app.get("/api/jobs")
-def list_jobs() -> dict:
-    return {"jobs": [_job_to_dict(r) for r in db.list_jobs()]}
+def list_jobs(request: Request) -> dict:
+    owner_id = request.state.user["id"]
+    return {"jobs": [_job_to_dict(r) for r in db.list_jobs_for_owner(owner_id)]}
 
 
 @app.get("/api/jobs/{job_id}")
-def get_job(job_id: str) -> dict:
+def get_job(job_id: str, request: Request) -> dict:
     row = db.get_job(job_id)
     if row is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    v = db.get_video(row["video_id"])
+    if v is None or v["owner_id"] != request.state.user["id"]:
         raise HTTPException(status_code=404, detail="job not found")
     return _job_to_dict(row)
 

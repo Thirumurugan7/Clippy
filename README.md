@@ -31,6 +31,12 @@ and this file grows with them.
 
   Filler list overridable via `CLIPFORGE_FILLER_WORDS`. Tests: `cd frontend &&
   npm test` (vitest, EDL logic) and `./.venv/bin/python -m pytest backend/tests`.
+- **M5 (accounts)**: email + password sign-in (PBKDF2 hashing, httpOnly session
+  cookie), multi-user with **per-user isolation** — every video/job/export is
+  owned by a user and access is enforced centrally in middleware. On first run an
+  admin account is created (`admin@clippy.local` / `clippy-admin`, overridable via
+  `CLIPPY_ADMIN_EMAIL` / `CLIPPY_ADMIN_PASSWORD`) and any pre-auth videos are
+  adopted by it.
 - **M3**: gemma4 highlight detection (pluggable `backend/llm.py`). A `highlights`
   worker job reads the transcript text and proposes candidate clips
   (start/end/reason/score), shown in the Highlights rail with heat-ring scores.

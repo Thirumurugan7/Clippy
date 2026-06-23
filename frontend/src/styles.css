@@ -92,7 +92,28 @@ button:disabled { opacity: .45; cursor: default; }
 .dot-failed { background: var(--red); }
 
 .main { flex: 1; min-height: 0; overflow: hidden; }
-.loading-shell { display: grid; place-items: center; height: 100%; color: var(--muted); }
+.loading-shell { display: grid; place-items: center; height: 100vh; color: var(--muted); }
+.user-email { color: var(--muted); margin-right: 4px; }
+
+/* ---------- auth screen ---------- */
+.auth-screen { height: 100vh; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(139,108,246,0.12), transparent 60%), var(--bg-0); }
+.auth-card {
+  width: 360px; max-width: 100%; display: flex; flex-direction: column; gap: 12px;
+  background: var(--bg-1); border: 1px solid var(--line); border-radius: 16px;
+  padding: 28px 26px; box-shadow: 0 30px 80px -40px #000;
+}
+.auth-logo { width: 72px; height: 72px; object-fit: contain; background: #fff; border-radius: 16px; padding: 8px; align-self: center; box-shadow: 0 16px 40px -20px var(--amber-glow); }
+.auth-card h1 { font-size: 20px; text-align: center; }
+.auth-sub { color: var(--muted); font-size: 12.5px; text-align: center; margin: -4px 0 6px; line-height: 1.5; }
+.auth-card input {
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px;
+  color: var(--text); padding: 11px 12px; font-size: 14px;
+}
+.auth-card input:focus { outline: none; border-color: var(--amber); }
+.auth-error { text-align: center; font-size: 12px; margin: 0; }
+.auth-toggle { background: none; border: none; color: var(--muted); font-size: 12.5px; cursor: pointer; padding: 4px; }
+.auth-toggle:hover { color: var(--amber); }
 
 /* ---------- welcome ---------- */
 .welcome {

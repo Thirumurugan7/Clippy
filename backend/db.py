@@ -55,6 +55,20 @@ def init_db() -> None:
     with get_conn() as conn:
         conn.executescript(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id         TEXT PRIMARY KEY,
+                email      TEXT UNIQUE NOT NULL,
+                pw_salt    TEXT NOT NULL,
+                pw_hash    TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                token      TEXT PRIMARY KEY,
+                user_id    TEXT NOT NULL REFERENCES users(id),
+                created_at REAL NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS videos (
                 id               TEXT PRIMARY KEY,
                 original_filename TEXT NOT NULL,
@@ -138,6 +152,10 @@ def init_db() -> None:
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(jobs)")]
         if "params_json" not in cols:
             conn.execute("ALTER TABLE jobs ADD COLUMN params_json TEXT")
+        # Migration: per-user ownership of videos.
+        vcols = [r["name"] for r in conn.execute("PRAGMA table_info(videos)")]
+        if "owner_id" not in vcols:
+            conn.execute("ALTER TABLE videos ADD COLUMN owner_id TEXT")
 
 
 # --------------------------------------------------------------------------- #
@@ -177,6 +195,73 @@ def update_video_metadata(
 def get_video(video_id: str) -> Optional[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM videos WHERE id=?", (video_id,)).fetchone()
+
+
+def list_videos_for_owner(owner_id: str) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM videos WHERE owner_id=? ORDER BY created_at DESC", (owner_id,)
+        ).fetchall()
+
+
+# --------------------------------------------------------------------------- #
+# Users & sessions
+# --------------------------------------------------------------------------- #
+def create_user_row(user_id: str, email: str, pw_salt: str, pw_hash: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO users (id, email, pw_salt, pw_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, email, pw_salt, pw_hash, time.time()),
+        )
+
+
+def get_user_by_email(email: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+
+
+def get_user_by_id(user_id: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+
+
+def count_users() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+
+
+def create_session_row(token: str, user_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
+            (token, user_id, time.time()),
+        )
+
+
+def get_session_user(token: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=?",
+            (token,),
+        ).fetchone()
+
+
+def delete_session(token: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+
+
+def count_orphan_videos() -> int:
+    with get_conn() as conn:
+        return conn.execute("SELECT COUNT(*) AS n FROM videos WHERE owner_id IS NULL").fetchone()["n"]
+
+
+def assign_orphan_videos(owner_id: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE videos SET owner_id=? WHERE owner_id IS NULL", (owner_id,)
+        )
+        return cur.rowcount
 
 
 # --------------------------------------------------------------------------- #
@@ -314,6 +399,15 @@ def list_jobs(limit: int = 100) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
             "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+
+
+def list_jobs_for_owner(owner_id: str, limit: int = 100) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            """SELECT j.* FROM jobs j JOIN videos v ON v.id=j.video_id
+               WHERE v.owner_id=? ORDER BY j.created_at DESC LIMIT ?""",
+            (owner_id, limit),
         ).fetchall()
 
 
