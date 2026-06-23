@@ -1,4 +1,4 @@
-"""Central configuration: filesystem paths for ClipForge.
+"""Central configuration: filesystem paths for Clippy.
 
 Everything is derived from the project root so the same code runs unchanged on
 a dev laptop or a server. No values are hard-coded to a user's home directory.

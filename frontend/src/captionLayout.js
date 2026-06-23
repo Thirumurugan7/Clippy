@@ -1,6 +1,6 @@
 // Caption layout + canvas drawing for the live vertical preview. Mirrors the
-// backend Pillow renderer (backend/captions.py) so the preview matches the
-// exported short: words grouped into short lines, the spoken word highlighted.
+// backend Pillow renderer (backend/captions.py) + presets so the preview matches
+// the exported short. `style` is a resolved caption style (see presets.js).
 
 export function groupLines(words, maxWords = 4, maxGap = 0.7) {
   const lines = [];
@@ -23,23 +23,34 @@ export function groupLines(words, maxWords = 4, maxGap = 0.7) {
   }));
 }
 
-// Draw the caption active at virtual time t onto a 2D context sized W x H.
-export function drawCaptions(ctx, lines, t, W, H, opts = {}) {
-  const { fontsize = 58, primary = "#ff8a3d", upcoming = "#ffffff", marginV = 300 } = opts;
+function roundRect(ctx, x, y, w, h, r) {
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, w, h);
+  }
+}
+
+// Draw the caption active at virtual time t. `style` keys mirror presets.py.
+export function drawCaptions(ctx, lines, t, W, H, style) {
   const line = lines.find((l) => t >= l.start && t <= l.end);
   if (!line) return;
+  const fs = style.fontsize;
+  const txt = (w) => (style.uppercase ? w.word.trim().toUpperCase() : w.word.trim());
 
-  ctx.font = `700 ${fontsize}px DejaVu Sans, Arial, sans-serif`;
+  ctx.font = `700 ${fs}px "DejaVu Sans", Arial, sans-serif`;
   ctx.textBaseline = "top";
   const space = ctx.measureText(" ").width;
-  const maxW = W - 120;
+  const pad = Math.max(6, fs * 0.22);
+  const maxW = W - 80;
 
-  // wrap into rows
+  // wrap
   const rows = [];
-  let row = [];
-  let rowW = 0;
+  let row = [], rowW = 0;
   for (const w of line.words) {
-    const tw = ctx.measureText(w.word.trim()).width;
+    const tw = ctx.measureText(txt(w)).width;
     const add = tw + (row.length ? space : 0);
     if (row.length && rowW + add > maxW) {
       rows.push(row);
@@ -51,23 +62,59 @@ export function drawCaptions(ctx, lines, t, W, H, opts = {}) {
   }
   if (row.length) rows.push(row);
 
-  const lineH = fontsize * 1.25;
-  let y = H - marginV - lineH * rows.length;
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = "#000";
-  ctx.lineJoin = "round";
+  const lineH = fs * 1.3;
+  const totalH = lineH * rows.length;
+  let y;
+  if (style.position === "center") y = (H - totalH) / 2;
+  else if (style.position === "top") y = H * 0.1;
+  else y = H - H * 0.16 - totalH;
 
   for (const r of rows) {
-    const widths = r.map((w) => ctx.measureText(w.word.trim()).width);
-    const totalW = widths.reduce((a, b) => a + b, 0) + space * (r.length - 1);
-    let x = (W - totalW) / 2;
-    r.forEach((w, idx) => {
-      const txt = w.word.trim();
+    const widths = r.map((w) => ctx.measureText(txt(w)).width);
+    const rw = widths.reduce((a, b) => a + b, 0) + space * (r.length - 1);
+    let x = (W - rw) / 2;
+
+    if (style.line_band) {
+      ctx.fillStyle = style.line_band;
+      roundRect(ctx, x - pad, y - pad / 2, rw + pad * 2, lineH, 12);
+    }
+    // boxes
+    let bx = x;
+    r.forEach((w, i) => {
       const active = t >= w.virtualStart && t <= w.virtualEnd;
-      ctx.strokeText(txt, x, y);
-      ctx.fillStyle = active ? primary : upcoming;
-      ctx.fillText(txt, x, y);
-      x += widths[idx] + space;
+      const box = active && style.active_box ? style.active_box : style.word_box;
+      if (box) {
+        ctx.fillStyle = box;
+        roundRect(ctx, bx - pad / 2, y, widths[i] + pad, lineH - 6, 8);
+      }
+      bx += widths[i] + space;
+    });
+    // text
+    r.forEach((w, i) => {
+      const active = t >= w.virtualStart && t <= w.virtualEnd;
+      const s = txt(w);
+      ctx.save();
+      if (style.glow && active) {
+        ctx.shadowColor = style.glow;
+        ctx.shadowBlur = fs * 0.5;
+      }
+      if (style.outline_width > 0) {
+        ctx.lineWidth = style.outline_width;
+        ctx.strokeStyle = style.outline_color;
+        ctx.lineJoin = "round";
+        ctx.strokeText(s, x, y);
+      }
+      if (active && style.gradient) {
+        const g = ctx.createLinearGradient(0, y, 0, y + fs);
+        g.addColorStop(0, style.gradient[0]);
+        g.addColorStop(1, style.gradient[1]);
+        ctx.fillStyle = g;
+      } else {
+        ctx.fillStyle = active ? style.primary : style.upcoming;
+      }
+      ctx.fillText(s, x, y);
+      ctx.restore();
+      x += widths[i] + space;
     });
     y += lineH;
   }

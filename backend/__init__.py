@@ -1,1 +1,1 @@
-"""ClipForge backend package."""
+"""Clippy backend package."""

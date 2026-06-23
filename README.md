@@ -1,4 +1,4 @@
-# ClipForge
+# Clippy
 
 Local-first tool that turns one long video into vertical short-form clips, edited
 by editing the transcript. All processing is **local and free**: ffmpeg +

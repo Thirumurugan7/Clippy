@@ -1,4 +1,4 @@
-"""ClipForge FastAPI application.
+"""Clippy FastAPI application.
 
 M0 scope only:
 - POST /api/upload         : receive and store a real video, enqueue a probe job
@@ -25,8 +25,16 @@ from pydantic import BaseModel
 from . import config, db
 from .edl import validate_edl
 from .fillers import detect_fillers
+from .presets import ASPECTS, CAPTION_PRESETS
 
-app = FastAPI(title="ClipForge", version="0.1.0")
+DEFAULT_SETTINGS = {
+    "aspect": "9:16",
+    "framing": "auto",
+    "crop_cx": 0.5,
+    "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
+}
+
+app = FastAPI(title="Clippy", version="0.1.0")
 
 # Vite dev server runs on a different origin during development.
 app.add_middleware(
@@ -356,6 +364,67 @@ def export_edit(video_id: str) -> dict:
         raise HTTPException(status_code=400, detail="transcript not ready")
     job_id = db.create_job(video_id, job_type="export_edit")
     return {"job_id": job_id}
+
+
+class AiEditBody(BaseModel):
+    prompt: str
+
+
+@app.post("/api/videos/{video_id}/ai_edit")
+def start_ai_edit(video_id: str, body: AiEditBody) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="ai_edit", params_json=json.dumps({"prompt": body.prompt}))
+    return {"job_id": job_id}
+
+
+@app.get("/api/videos/{video_id}/ai_edit")
+def get_ai_edit(video_id: str) -> dict:
+    row = db.get_ai_edit(video_id)
+    if row is None:
+        return {"ready": False}
+    return {
+        "ready": True,
+        "clip": json.loads(row["clip_json"]) if row["clip_json"] else None,
+        "aspect": row["aspect"],
+        "caption_preset": row["caption_preset"],
+        "reason": row["reason"],
+        "raw": row["raw"],
+        "error": row["error"],
+    }
+
+
+class SettingsBody(BaseModel):
+    aspect: str
+    framing: str
+    crop_cx: float
+    caption: dict
+
+
+@app.get("/api/videos/{video_id}/settings")
+def get_settings(video_id: str) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_settings(video_id)
+    return json.loads(row["json"]) if row else dict(DEFAULT_SETTINGS)
+
+
+@app.put("/api/videos/{video_id}/settings")
+def put_settings(video_id: str, body: SettingsBody) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if body.aspect not in ASPECTS:
+        raise HTTPException(status_code=400, detail=f"unknown aspect {body.aspect}")
+    if body.framing not in ("auto", "manual"):
+        raise HTTPException(status_code=400, detail="framing must be auto|manual")
+    if not (0.0 <= body.crop_cx <= 1.0):
+        raise HTTPException(status_code=400, detail="crop_cx out of range")
+    if body.caption.get("preset") not in CAPTION_PRESETS:
+        raise HTTPException(status_code=400, detail="unknown caption preset")
+    db.save_settings(video_id, json.dumps(body.model_dump()))
+    return {"ok": True}
 
 
 @app.post("/api/videos/{video_id}/reframe")

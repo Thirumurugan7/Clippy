@@ -1,25 +1,30 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from "react";
 import { virtualToSource, sourceToVirtual, segmentDuration } from "../edl.js";
 import { drawCaptions, cxAt } from "../captionLayout.js";
-
-const CANVAS_W = 540;
-const CANVAS_H = 960; // 9:16 at half of 1080x1920
-const SCALE = CANVAS_W / 1080; // caption metrics scale vs the exported short
+import { resolveCaptionStyle } from "../presets.js";
+import { computeCrop, targetDims } from "../crop.js";
 
 // Plays the original <video> but only the kept segments, in EDL order. In
-// `vertical` mode it composites a live 9:16 preview onto a canvas — the same
-// face-track crop + karaoke captions the export will bake — so what you see
-// before exporting is what you get.
+// `vertical` mode it composites a live preview onto a canvas — the same
+// aspect crop (face-track or manual) + caption preset the export will bake.
 export const PreviewPlayer = forwardRef(function PreviewPlayer(
-  { videoId, edl, onVirtualTime, vertical, reframe, captionLines },
+  { videoId, edl, onVirtualTime, vertical, reframe, captionLines, settings, onCropDrag },
   ref
 ) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const edlRef = useRef(edl);
   edlRef.current = edl;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   const idxRef = useRef(0);
   const [paused, setPaused] = useState(true);
+
+  const aspect = settings?.aspect || "9:16";
+  const [tw, th] = targetDims(aspect);
+  const scale = 540 / Math.max(tw, th);
+  const cw = Math.round(tw * scale);
+  const ch = Math.round(th * scale);
 
   function findSegBySource(e, src) {
     for (let i = 0; i < e.length; i++) {
@@ -71,7 +76,7 @@ export const PreviewPlayer = forwardRef(function PreviewPlayer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [edl]);
 
-  // Canvas compositor loop for vertical mode.
+  // Canvas compositor loop.
   useEffect(() => {
     if (!vertical) return;
     let raf;
@@ -79,35 +84,53 @@ export const PreviewPlayer = forwardRef(function PreviewPlayer(
     function frame() {
       const v = videoRef.current;
       const canvas = canvasRef.current;
-      if (v && canvas && ctx && v.videoWidth) {
-        const vw = v.videoWidth;
-        const vh = v.videoHeight;
-        const cropW = Math.round((vh * 9) / 16);
-        const useW = Math.min(cropW, vw);
-        const cx = (reframe?.centers ? cxAt(reframe.centers, v.currentTime) : 0.5) * vw;
-        const sx = Math.min(Math.max(cx - useW / 2, 0), vw - useW);
+      const st = settingsRef.current;
+      if (v && canvas && ctx && v.videoWidth && st) {
+        const vw = v.videoWidth, vh = v.videoHeight;
+        const asp = st.aspect;
+        const cxNorm = st.framing === "manual"
+          ? st.crop_cx
+          : (reframe?.centers ? cxAt(reframe.centers, v.currentTime) : 0.5);
+        const [sx, sy, scw, sch] = computeCrop(vw, vh, asp, cxNorm);
         ctx.fillStyle = "#000";
-        ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-        ctx.drawImage(v, sx, 0, useW, vh, 0, 0, CANVAS_W, CANVAS_H);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(v, sx, sy, scw, sch, 0, 0, canvas.width, canvas.height);
         if (captionLines && captionLines.length) {
           const vt = sourceToVirtual(edlRef.current, v.currentTime);
           if (vt != null) {
-            drawCaptions(ctx, captionLines, vt, CANVAS_W, CANVAS_H, {
-              fontsize: 58 * SCALE, marginV: 300 * SCALE,
-            });
+            const base = resolveCaptionStyle(st.caption);
+            const s = { ...base, fontsize: base.fontsize * (canvas.width / tw), outline_width: base.outline_width * (canvas.width / tw) };
+            drawCaptions(ctx, captionLines, vt, canvas.width, canvas.height, s);
           }
+        }
+        if (st.framing === "manual") {
+          ctx.strokeStyle = "rgba(255,138,61,0.9)";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
         }
       }
       raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [vertical, reframe, captionLines]);
+  }, [vertical, reframe, captionLines, tw]);
 
-  function toggle() {
+  // pointer: drag to pan (manual framing); click to play/pause.
+  const drag = useRef(null);
+  function onPointerDown(e) {
+    drag.current = { x: e.clientX, cx: settings?.crop_cx ?? 0.5, moved: false };
+  }
+  function onPointerMove(e) {
+    if (!drag.current || settings?.framing !== "manual") return;
+    const dx = e.clientX - drag.current.x;
+    if (Math.abs(dx) > 2) drag.current.moved = true;
+    const next = Math.max(0, Math.min(1, drag.current.cx - dx / cw));
+    onCropDrag?.(next);
+  }
+  function onPointerUp() {
     const v = videoRef.current;
-    if (!v) return;
-    v.paused ? v.play() : v.pause();
+    if (drag.current && !drag.current.moved && v) v.paused ? v.play() : v.pause();
+    drag.current = null;
   }
 
   return (
@@ -123,8 +146,13 @@ export const PreviewPlayer = forwardRef(function PreviewPlayer(
         playsInline
       />
       {vertical && (
-        <div className="vert-stage" onClick={toggle}>
-          <canvas ref={canvasRef} width={CANVAS_W} height={CANVAS_H} className="vert-canvas" />
+        <div
+          className="vert-stage"
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+        >
+          <canvas ref={canvasRef} width={cw} height={ch} className="vert-canvas" />
           {paused && <div className="play-overlay">▶</div>}
         </div>
       )}

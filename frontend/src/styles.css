@@ -169,9 +169,63 @@ button:disabled { opacity: .45; cursor: default; }
   background: #000; border-radius: var(--r); border: 1px solid var(--line);
 }
 
-/* ---------- highlights rail ---------- */
+/* ---------- sidebar shell ---------- */
+.sidebar { display: flex; flex-shrink: 0; border-left: 1px solid var(--line); background: var(--bg-1); }
+.side-strip {
+  width: 88px; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 8px; border-right: 1px solid var(--line); background: var(--bg-0);
+}
+.side-icon {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: none; border: none; color: var(--muted); padding: 10px 4px; border-radius: 9px; cursor: pointer;
+}
+.side-icon:hover { background: var(--bg-2); color: var(--text); }
+.side-icon.on { background: var(--bg-3); color: var(--amber); }
+.side-glyph { font-size: 18px; }
+.side-label { font-size: 10px; letter-spacing: .02em; }
+.side-collapse { margin-top: auto; background: var(--bg-2); border: 1px solid var(--line); color: var(--muted); border-radius: 8px; padding: 6px; cursor: pointer; }
+.side-panel { width: 332px; flex-shrink: 0; overflow-y: auto; }
+.sidebar.collapsed .side-panel { display: none; }
+
+.panel { padding: 16px; }
+.panel h3 { font-size: 15px; }
+.panel-sub { color: var(--faint); font-size: 11.5px; margin: 4px 0 12px; line-height: 1.45; }
+.panel-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0; }
+.panel-row label { color: var(--muted); font-size: 12px; }
+.panel-row input[type=range] { flex: 1; accent-color: var(--amber); }
+.panel-row select, .panel-row input[type=color] { background: var(--bg-2); color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 4px; }
+.btn-amber.full { width: 100%; margin-top: 8px; }
+
+/* captions panel */
+.cap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cap-card { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; }
+.cap-card:hover { border-color: var(--line-2); }
+.cap-card.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber-deep); }
+.cap-sample { height: 34px; display: flex; align-items: center; justify-content: center; gap: 4px; background: #000; border-radius: 6px; font-weight: 800; font-size: 13px; }
+.cap-name { font-size: 11px; color: var(--muted); text-align: center; }
+
+/* crop panel */
+.aspect-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.aspect-card { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--text); }
+.aspect-card.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber-deep); }
+.aspect-icon { border: 2px solid var(--muted); border-radius: 3px; }
+.ar-9-16 { width: 18px; height: 32px; } .ar-1-1 { width: 28px; height: 28px; }
+.ar-4-5 { width: 24px; height: 30px; } .ar-16-9 { width: 32px; height: 18px; }
+.aspect-card.on .aspect-icon { border-color: var(--amber); }
+.aspect-label { font-weight: 600; font-size: 13px; }
+.aspect-hint { font-size: 10px; color: var(--faint); }
+.seg-toggle.wide { display: flex; width: 100%; }
+.seg-toggle.wide button { flex: 1; }
+
+/* ai panel */
+.ai-input { width: 100%; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; color: var(--text); padding: 9px; font: inherit; font-size: 13px; resize: vertical; }
+.ai-result { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.ai-reason { color: var(--muted); font-size: 12.5px; line-height: 1.5; margin: 6px 0 10px; }
+
+/* highlights rail re-homed inside the sidebar panel */
+.side-panel .rail { width: auto; border: none; }
 .rail {
-  width: 366px; flex-shrink: 0; border-left: 1px solid var(--line);
+  width: 100%; flex-shrink: 0;
   background: var(--bg-1); display: flex; flex-direction: column; overflow-y: auto;
 }
 .rail-head {

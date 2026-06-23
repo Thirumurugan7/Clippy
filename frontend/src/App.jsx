@@ -73,7 +73,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">◣</span>
-          <span className="brand-name">ClipForge</span>
+          <span className="brand-name">Clippy</span>
           <span className="brand-tag">long video → shorts</span>
         </div>
         <div className="topbar-actions">
@@ -133,7 +133,7 @@ export default function App() {
           <div className="welcome">
             <div className="welcome-mark">◣</div>
             <h1>Forge shorts from any long video</h1>
-            <p>Upload a video. ClipForge transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
+            <p>Upload a video. Clippy transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
             <button
               className="btn-amber lg"
               onClick={() => fileInputRef.current?.click()}
