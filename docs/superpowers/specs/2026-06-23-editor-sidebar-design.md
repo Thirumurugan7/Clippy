@@ -53,25 +53,41 @@ clamped to `[0, W-crop_w]`.
 
 ## Caption presets (both renderers)
 
-`backend/presets.py` defines 5 presets; each resolves to a style dict consumed by
-**both** renderers:
+`backend/presets.py` defines **at least 12 presets** modeled on the caption looks
+the most successful short-form creators use. Each resolves to a style dict
+consumed by **both** renderers (Pillow export + canvas preview), so the preview
+matches the export.
 
-| Preset | Look |
+| Preset | Look (modeled on) |
 |---|---|
-| `clean` | White text, thin outline, no box |
-| `bold_pop` | Large bold, active word in highlight colour, heavy outline |
-| `karaoke` | Current default — active word filled highlight colour |
-| `hype_box` | Words on a filled rounded box; active word box in highlight colour |
-| `minimal` | Smaller, lower-third, subtle outline |
+| `hormozi` | ALL-CAPS bold, white, thick black outline; active word on a filled **yellow box** (Alex Hormozi) |
+| `beast` | Huge bold white, heavy outline + drop shadow; active word pops in bright colour (MrBeast energy) |
+| `karaoke` | Active word fills with highlight colour as spoken (current default) |
+| `boxed` | Each word sits on a dark rounded chip; active word chip in highlight colour |
+| `tiktok` | White text on a semi-transparent black rounded band behind the line (classic auto-caption) |
+| `neon` | Bright neon highlight colour with an outer glow; active word brightest |
+| `bold_pop` | Large bold, active word in highlight colour, strong outline |
+| `clean` | White text, thin outline, no box — understated |
+| `minimal` | Smaller lower-third, subtle outline (Ali-Abdaal-style restraint) |
+| `uppercase` | ALL-CAPS, tight tracking, white + outline, active word colour |
+| `gradient` | Active word drawn in a warm gradient fill (amber→red) |
+| `subtitle` | Bottom subtitle bar: white text on a solid dark bar across the frame |
 
-A resolved style = `{font, fontsize, primary (highlight), upcoming, outline,
-box (none|rgba), position, max_words}`. User tweaks (`fontsize`, `color`,
-`position`) override the preset's values.
+A resolved style supports: `{font, fontsize, primary (active/highlight),
+upcoming, outline_color, outline_width, uppercase (bool), word_box (none|rgba —
+per-word chip), active_box (none|rgba — active-word box, e.g. Hormozi yellow),
+line_band (none|rgba — band behind the whole line), glow (none|rgba), gradient
+(none|[from,to]), position (bottom|center|top), max_words}`. User tweaks
+(`fontsize`, `color`, `position`) override the preset's values; `color` maps to
+the active/highlight colour.
 
-- `backend/captions.py` `CaptionRenderer` (export, Pillow) extended to take a
-  style and draw the optional background box + honour position.
-- `frontend/src/captionLayout.js` `drawCaptions` (preview, canvas) extended the
-  same way. Same presets both places → preview == export.
+- `backend/captions.py` `CaptionRenderer` (export, Pillow) implements the full
+  style schema (per-word chips, active box, line band, outline, glow, gradient,
+  uppercase, position).
+- `frontend/src/captionLayout.js` `drawCaptions` (preview, canvas) implements the
+  same schema. Both read presets from the shared definitions (`backend/presets.py`
+  and its JS mirror `frontend/src/presets.js`) so a preset looks identical in
+  preview and export.
 
 ## AI prompt edit
 
@@ -106,9 +122,9 @@ collapse control hides the panel (Veed-style). Panels:
   applied proposal's reason; "Apply" is reversible (EDL + settings are undoable /
   re-editable).
 - **Highlights** — the existing `HighlightsRail`, moved into this tab.
-- **Captions** — 5 preset cards, each showing the preset name and a small styled
-  text sample rendered in that preset's look, + size/colour/position tweaks.
-  Writes `settings.caption`.
+- **Captions** — a scrollable gallery of the 12 preset cards, each showing the
+  preset name and a small styled text sample rendered in that preset's look, +
+  size/colour/position tweaks. Writes `settings.caption`.
 - **Crop** — aspect buttons (9:16 / 1:1 / 4:5 / 16:9) + Auto/Manual toggle. In
   Manual, dragging the crop overlay on the preview sets `crop_cx`. Writes
   `settings.aspect/framing/crop_cx`.
