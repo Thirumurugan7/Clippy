@@ -100,6 +100,12 @@ def init_db() -> None:
                 -- [{id, start, end, text, word_start, word_end}], JSON.
                 segments_json        TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS edits (
+                video_id   TEXT PRIMARY KEY REFERENCES videos(id),
+                edl_json   TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
             """
         )
         # Migration for databases created before params_json existed.
@@ -185,6 +191,24 @@ def get_transcript(video_id: str) -> Optional[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM transcripts WHERE video_id=?", (video_id,)
         ).fetchone()
+
+
+# --------------------------------------------------------------------------- #
+# Edits (EDL)
+# --------------------------------------------------------------------------- #
+def get_edit(video_id: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM edits WHERE video_id=?", (video_id,)
+        ).fetchone()
+
+
+def save_edit(video_id: str, edl_json: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO edits (video_id, edl_json, updated_at) VALUES (?, ?, ?)",
+            (video_id, edl_json, time.time()),
+        )
 
 
 # --------------------------------------------------------------------------- #

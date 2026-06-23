@@ -23,6 +23,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import config, db
+from .edl import validate_edl
 from .fillers import detect_fillers
 
 app = FastAPI(title="ClipForge", version="0.1.0")
@@ -270,6 +271,38 @@ def get_fillers(video_id: str) -> dict:
     words = json.loads(tr["words_json"])
     indices = detect_fillers(words)
     return {"indices": indices, "count": len(indices)}
+
+
+class EdlBody(BaseModel):
+    segments: list[dict]
+
+
+@app.get("/api/videos/{video_id}/edit")
+def get_edit(video_id: str) -> dict:
+    """Return the saved EDL, or a default single full-length segment."""
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_edit(video_id)
+    if row is not None:
+        return {"segments": json.loads(row["edl_json"])}
+    dur = video["duration_seconds"] or 0.0
+    return {"segments": [{"id": uuid.uuid4().hex, "sourceStart": 0.0, "sourceEnd": dur}]}
+
+
+@app.put("/api/videos/{video_id}/edit")
+def put_edit(video_id: str, body: EdlBody) -> dict:
+    """Persist the EDL (autosaved by the editor). Validated against duration."""
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    dur = video["duration_seconds"] or 0.0
+    try:
+        validate_edl(body.segments, dur)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.save_edit(video_id, json.dumps(body.segments))
+    return {"ok": True}
 
 
 class ExportRequest(BaseModel):
