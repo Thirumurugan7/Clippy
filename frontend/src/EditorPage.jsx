@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useEdl } from "./hooks/useEdl.js";
+import { newId, sourceToVirtual, projectWords } from "./edl.js";
+import { groupLines } from "./captionLayout.js";
 import { PreviewPlayer } from "./components/PreviewPlayer.jsx";
 import { TranscriptPane } from "./components/TranscriptPane.jsx";
 import { Timeline } from "./components/Timeline.jsx";
 import { Toolbar } from "./components/Toolbar.jsx";
+import { HighlightsRail } from "./components/HighlightsRail.jsx";
 
 // Gate the editor until probe has set the real duration — otherwise the default
 // EDL would be a degenerate [0,0] segment that projects zero words.
@@ -27,21 +30,45 @@ export function EditorPage({ videoId }) {
     };
   }, [videoId]);
 
-  if (!duration) return <div className="card mono">Analyzing video…</div>;
+  if (!duration) return <div className="loading-shell mono">Analyzing video…</div>;
   return <EditorInner videoId={videoId} duration={duration} />;
 }
 
-// The editor proper: preview (top), transcript (middle), timeline (bottom) — all
-// driven by one EDL via useEdl. Mounted only once duration is known.
 function EditorInner({ videoId, duration }) {
   const { edl, ops, undo, redo, canUndo, canRedo, saving, saveError } = useEdl(videoId);
   const [transcript, setTranscript] = useState(null);
   const [peaks, setPeaks] = useState(null);
   const [activeVirtual, setActiveVirtual] = useState(0);
   const [exportState, setExportState] = useState(null);
+  const [activeClip, setActiveClip] = useState(null);
+  const [vmode, setVmode] = useState(true); // 9:16 WYSIWYG preview by default
+  const [reframe, setReframe] = useState(null);
   const playerRef = useRef(null);
 
-  // poll transcript until ready
+  // Caption lines for the live preview (same grouping the export uses).
+  const captionLines = useMemo(() => {
+    if (!transcript || !edl) return [];
+    return groupLines(projectWords(edl, transcript.words));
+  }, [transcript, edl]);
+
+  // Kick off (or load) the face-track trajectory for the vertical preview.
+  useEffect(() => {
+    let cancelled = false;
+    setReframe(null);
+    fetch(`/api/videos/${videoId}/reframe`, { method: "POST" });
+    (function poll() {
+      fetch(`/api/videos/${videoId}/reframe`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (cancelled) return;
+          if (d.ready) setReframe(d);
+          else setTimeout(poll, 2500);
+        })
+        .catch(() => !cancelled && setTimeout(poll, 2500));
+    })();
+    return () => { cancelled = true; };
+  }, [videoId]);
+
   useEffect(() => {
     let cancelled = false;
     setTranscript(null);
@@ -55,12 +82,9 @@ function EditorInner({ videoId, duration }) {
         })
         .catch(() => !cancelled && setTimeout(poll, 2000));
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [videoId]);
 
-  // poll waveform until ready
   useEffect(() => {
     let cancelled = false;
     setPeaks(null);
@@ -74,14 +98,10 @@ function EditorInner({ videoId, duration }) {
         })
         .catch(() => !cancelled && setTimeout(poll, 2000));
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [videoId]);
 
-  function seek(vt) {
-    playerRef.current?.seekVirtual(vt);
-  }
+  const seek = (vt) => playerRef.current?.seekVirtual(vt);
 
   function splitAtPlayhead() {
     ops.split(activeVirtual);
@@ -91,73 +111,156 @@ function EditorInner({ videoId, duration }) {
     const res = await fetch(`/api/videos/${videoId}/fillers`);
     if (!res.ok || !transcript) return;
     const { indices } = await res.json();
-    // Delete each filler word's source span (composes via functional updates).
     for (const i of indices) {
       const w = transcript.words[i];
       if (w) ops.deleteSourceRange(w.start, w.end);
     }
   }
 
-  async function doExport() {
-    setExportState({ status: "saving", jobId: null, result: null });
-    // Flush the current EDL before exporting so the worker renders the latest.
+  // Highlights: previewing seeks within the current edit; "Use clip" replaces the
+  // working edit with just that range so the creator can trim and export a short.
+  function onPreviewClip(c) {
+    const vt = sourceToVirtual(edl, c.start);
+    if (vt != null) seek(vt);
+    else onUseClip(c);
+  }
+  function onUseClip(c) {
+    ops.setAll([{ id: newId(), sourceStart: c.start, sourceEnd: c.end }]);
+    setActiveClip({ start: c.start, end: c.end });
+    setTimeout(() => seek(0), 0);
+  }
+
+  async function runExport(kind) {
+    setExportState({ status: "saving", kind, jobId: null, result: null });
     await fetch(`/api/videos/${videoId}/edit`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ segments: edl }),
     });
-    const res = await fetch(`/api/videos/${videoId}/export`, { method: "POST" });
+    const path = kind === "v" ? "export_vertical" : "export";
+    const res = await fetch(`/api/videos/${videoId}/${path}`, { method: "POST" });
     const { job_id } = await res.json();
     (function pollJob() {
       fetch(`/api/jobs/${job_id}`)
         .then((r) => r.json())
         .then((job) => {
           if (job.status === "done") {
-            setExportState({ status: "done", jobId: job_id, result: JSON.parse(job.result_json) });
+            setExportState({ status: "done", kind, jobId: job_id, result: JSON.parse(job.result_json) });
           } else if (job.status === "failed") {
-            setExportState({ status: "failed", jobId: job_id, error: job.error });
+            setExportState({ status: "failed", kind, jobId: job_id, error: job.error });
           } else {
-            setExportState({ status: job.status, jobId: job_id, result: null });
+            setExportState({ status: job.status, kind, jobId: job_id, result: null });
             setTimeout(pollJob, 1500);
           }
         });
     })();
   }
+  const doExport = () => runExport("h");
+  const doExportVertical = () => runExport("v");
 
-  if (!edl) return <div className="card mono">Loading editor…</div>;
+  if (!edl) return <div className="loading-shell mono">Loading editor…</div>;
   const exporting = exportState && !["done", "failed"].includes(exportState.status);
 
   return (
     <div className="editor">
-      <div className="preview-pane">
-        <PreviewPlayer
-          ref={playerRef}
+      <div className="workspace">
+        <section className="stage">
+          <div className="preview-head">
+            <div className="seg-toggle">
+              <button className={vmode ? "on" : ""} onClick={() => setVmode(true)}>9:16 short</button>
+              <button className={!vmode ? "on" : ""} onClick={() => setVmode(false)}>Source</button>
+            </div>
+            {vmode && (
+              <span className="preview-note mono">
+                {reframe
+                  ? reframe.tracked ? "live preview · face-tracked" : "live preview · center crop"
+                  : "analyzing framing…"}
+              </span>
+            )}
+          </div>
+          <div className={"preview-pane" + (vmode ? " is-vertical" : "")}>
+            <PreviewPlayer
+              ref={playerRef}
+              videoId={videoId}
+              edl={edl}
+              onVirtualTime={setActiveVirtual}
+              vertical={vmode}
+              reframe={reframe}
+              captionLines={captionLines}
+            />
+          </div>
+
+          <Toolbar
+            onSplit={splitAtPlayhead}
+            onDetectFillers={detectFillers}
+            onExport={doExport}
+            onExportVertical={doExportVertical}
+            undo={undo}
+            redo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            saving={saving}
+            saveError={saveError}
+            exporting={exporting}
+          />
+
+          <TranscriptPane
+            transcript={transcript}
+            edl={edl}
+            activeVirtual={activeVirtual}
+            onSeek={seek}
+            onDeleteSourceRange={(a, b) => ops.deleteSourceRange(a, b)}
+          />
+
+          {exportState && (
+            <div className="export-panel">
+              {exportState.status === "failed" ? (
+                <span className="error">Export failed: {exportState.error}</span>
+              ) : exportState.status !== "done" ? (
+                <p className="mono">
+                  {exportState.kind === "v"
+                    ? "Rendering 9:16 short — face tracking + captions, this takes a bit…"
+                    : "Rendering your clip…"}{" "}
+                  ({exportState.status})
+                </p>
+              ) : exportState.kind === "v" ? (
+                <>
+                  <p className="mono">
+                    9:16 short · {exportState.result.width}×{exportState.result.height} ·{" "}
+                    {exportState.result.duration}s ·{" "}
+                    {exportState.result.face_tracked ? "face-tracked" : "center crop (no face)"}
+                  </p>
+                  <video
+                    src={`/api/exports/${exportState.jobId}/file`}
+                    controls
+                    className="vertical-result"
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="mono">
+                    Exported {exportState.result.original_duration}s →{" "}
+                    <b>{exportState.result.output_duration}s</b> ·{" "}
+                    {exportState.result.num_segments} segment(s)
+                  </p>
+                  <video
+                    src={`/api/exports/${exportState.jobId}/file`}
+                    controls
+                    className="preview-video"
+                  />
+                </>
+              )}
+            </div>
+          )}
+        </section>
+
+        <HighlightsRail
           videoId={videoId}
-          edl={edl}
-          onVirtualTime={setActiveVirtual}
+          onUseClip={onUseClip}
+          onPreviewClip={onPreviewClip}
+          activeClip={activeClip}
         />
       </div>
-
-      <Toolbar
-        onSplit={splitAtPlayhead}
-        onDetectFillers={detectFillers}
-        onExport={doExport}
-        undo={undo}
-        redo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-        saving={saving}
-        saveError={saveError}
-        exporting={exporting}
-      />
-
-      <TranscriptPane
-        transcript={transcript}
-        edl={edl}
-        activeVirtual={activeVirtual}
-        onSeek={seek}
-        onDeleteSourceRange={(a, b) => ops.deleteSourceRange(a, b)}
-      />
 
       <Timeline
         edl={edl}
@@ -167,29 +270,6 @@ function EditorInner({ videoId, duration }) {
         ops={ops}
         onSeek={seek}
       />
-
-      {exportState && (
-        <div className="export-panel">
-          {exportState.status === "failed" ? (
-            <span className="error">Export failed: {exportState.error}</span>
-          ) : exportState.status !== "done" ? (
-            <p className="mono">Exporting… ({exportState.status})</p>
-          ) : (
-            <>
-              <p className="mono">
-                Exported: {exportState.result.original_duration}s →{" "}
-                <b>{exportState.result.output_duration}s</b> (
-                {exportState.result.num_segments} segments)
-              </p>
-              <video
-                src={`/api/exports/${exportState.jobId}/file`}
-                controls
-                className="preview-video"
-              />
-            </>
-          )}
-        </div>
-      )}
     </div>
   );
 }

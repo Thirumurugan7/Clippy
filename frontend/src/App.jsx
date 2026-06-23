@@ -1,20 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { EditorPage } from "./EditorPage.jsx";
 
-function formatBytes(n) {
-  if (n == null) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toFixed(1)} ${units[i]}`;
-}
-
-function StatusBadge({ status }) {
-  return <span className={`status status-${status}`}>{status}</span>;
+function StatusDot({ status }) {
+  return <span className={`dot dot-${status}`} title={status} />;
 }
 
 export default function App() {
@@ -22,8 +10,9 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [videos, setVideos] = useState({});
-  const [message, setMessage] = useState(null);
-  // Keep the open video in the URL (?v=...) so a reload stays in the editor.
+  const [showJobs, setShowJobs] = useState(false);
+  const fileInputRef = useRef(null);
+
   const [currentVideoId, setCurrentVideoIdState] = useState(
     () => new URLSearchParams(window.location.search).get("v")
   );
@@ -59,87 +48,102 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshJobs]);
 
-  async function handleUpload() {
-    if (!file) return;
+  async function uploadFile(f) {
+    if (!f) return;
     setUploading(true);
-    setMessage(null);
     try {
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", f);
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
-      if (!res.ok) {
-        setMessage({ kind: "error", text: data.detail || "upload failed" });
-      } else {
-        setMessage({
-          kind: "ok",
-          text: `Stored ${data.video_id} (${formatBytes(data.size_bytes)})`,
-        });
+      if (res.ok) {
         setCurrentVideoId(data.video_id);
         refreshJobs();
       }
-    } catch (e) {
-      setMessage({ kind: "error", text: String(e) });
     } finally {
       setUploading(false);
+      setFile(null);
     }
   }
+
+  const activeCount = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
 
   return (
     <div className="app">
       <header className="topbar">
-        <h1>ClipForge</h1>
-        <div className="uploader">
+        <div className="brand">
+          <span className="brand-mark">◣</span>
+          <span className="brand-name">ClipForge</span>
+          <span className="brand-tag">long video → shorts</span>
+        </div>
+        <div className="topbar-actions">
+          <button
+            className="btn-amber"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? "Uploading…" : "Upload video"}
+          </button>
           <input
+            ref={fileInputRef}
             type="file"
             accept="video/*"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            hidden
+            onChange={(e) => uploadFile(e.target.files?.[0] || null)}
           />
-          <button onClick={handleUpload} disabled={!file || uploading}>
-            {uploading ? "Uploading…" : "Upload"}
-          </button>
-          {message && (
-            <span className={message.kind === "error" ? "error" : "mono"}>
-              {message.text}
-            </span>
-          )}
+          <div className="jobs-wrap">
+            <button className="btn-ghost" onClick={() => setShowJobs((s) => !s)}>
+              Activity{activeCount > 0 ? ` · ${activeCount}` : ""}
+            </button>
+            {showJobs && (
+              <div className="jobs-pop">
+                {jobs.length === 0 ? (
+                  <p className="muted mono">No jobs yet.</p>
+                ) : (
+                  jobs.slice(0, 12).map((j) => {
+                    const v = videos[j.video_id];
+                    return (
+                      <button
+                        key={j.id}
+                        className="job-row"
+                        onClick={() => {
+                          setCurrentVideoId(j.video_id);
+                          setShowJobs(false);
+                        }}
+                      >
+                        <StatusDot status={j.status} />
+                        <span className="job-type">{j.type}</span>
+                        <span className="job-name mono">
+                          {v ? v.original_filename : j.video_id.slice(0, 8)}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
-      {currentVideoId ? (
-        <EditorPage key={currentVideoId} videoId={currentVideoId} />
-      ) : (
-        <div className="card mono">Upload a video to start editing.</div>
-      )}
-
-      <details className="jobs-drawer">
-        <summary>Jobs ({jobs.length})</summary>
-        <table>
-          <thead>
-            <tr>
-              <th>Status</th>
-              <th>Type</th>
-              <th>Video</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((j) => {
-              const v = videos[j.video_id];
-              return (
-                <tr
-                  key={j.id}
-                  onClick={() => setCurrentVideoId(j.video_id)}
-                  style={{ cursor: "pointer" }}
-                >
-                  <td><StatusBadge status={j.status} /></td>
-                  <td>{j.type}</td>
-                  <td className="mono">{v ? v.original_filename : j.video_id.slice(0, 8)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </details>
+      <main className="main">
+        {currentVideoId ? (
+          <EditorPage key={currentVideoId} videoId={currentVideoId} />
+        ) : (
+          <div className="welcome">
+            <div className="welcome-mark">◣</div>
+            <h1>Forge shorts from any long video</h1>
+            <p>Upload a video. ClipForge transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
+            <button
+              className="btn-amber lg"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? "Uploading…" : "Upload a video"}
+            </button>
+          </div>
+        )}
+      </main>
     </div>
   );
 }

@@ -3,6 +3,7 @@ export function Toolbar({
   onSplit,
   onDetectFillers,
   onExport,
+  onExportVertical,
   undo,
   redo,
   canUndo,
@@ -22,8 +23,11 @@ export function Toolbar({
       <button onClick={redo} disabled={!canRedo}>
         Redo
       </button>
-      <button className="btn-primary" onClick={onExport} disabled={exporting}>
-        {exporting ? "Exporting…" : "Export edited video"}
+      <button onClick={onExport} disabled={exporting}>
+        {exporting ? "Exporting…" : "Export video"}
+      </button>
+      <button className="btn-primary" onClick={onExportVertical} disabled={exporting}>
+        {exporting ? "Exporting…" : "Make 9:16 short"}
       </button>
       <span className={"save-state mono" + (saveError ? " error" : "")}>
         {saveError ? "save failed" : saving ? "saving…" : "saved"}

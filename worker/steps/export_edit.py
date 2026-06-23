@@ -80,29 +80,7 @@ def run_export_edit(job) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{job['id']}.mp4"
 
-    graph = _build_filtergraph(kept, has_audio)
-    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-        f.write(graph)
-        graph_path = f.name
-
-    cmd = [
-        _bin("ffmpeg"), "-y", "-i", video["stored_path"],
-        "-filter_complex_script", graph_path,
-        "-map", "[outv]",
-    ]
-    if has_audio:
-        cmd += ["-map", "[outa]", "-c:a", "aac", "-b:a", "192k"]
-    cmd += [
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-movflags", "+faststart", str(out_path),
-    ]
-
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    Path(graph_path).unlink(missing_ok=True)
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"ffmpeg export failed (exit {proc.returncode}): {proc.stderr[-1500:]}"
-        )
+    render_segments(video["stored_path"], kept, has_audio, str(out_path))
 
     out_duration = _probe_duration(str(out_path))
     return {
@@ -111,3 +89,25 @@ def run_export_edit(job) -> dict:
         "original_duration": round(total_duration, 3),
         "output_duration": round(out_duration, 3),
     }
+
+
+def render_segments(src_path: str, kept: list[tuple[float, float]], has_audio: bool, out_path: str) -> None:
+    """Cut + concat the given source-time intervals (in order) into out_path.
+
+    Shared by the normal edit export and the vertical export (which reframes and
+    captions the result). Re-encodes for frame-accurate cuts.
+    """
+    graph = _build_filtergraph(kept, has_audio)
+    with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+        f.write(graph)
+        graph_path = f.name
+
+    cmd = [_bin("ffmpeg"), "-y", "-i", src_path, "-filter_complex_script", graph_path, "-map", "[outv]"]
+    if has_audio:
+        cmd += ["-map", "[outa]", "-c:a", "aac", "-b:a", "192k"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-movflags", "+faststart", out_path]
+
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    Path(graph_path).unlink(missing_ok=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg export failed (exit {proc.returncode}): {proc.stderr[-1500:]}")

@@ -27,6 +27,17 @@ and this file grows with them.
 
   Filler list overridable via `CLIPFORGE_FILLER_WORDS`. Tests: `cd frontend &&
   npm test` (vitest, EDL logic) and `./.venv/bin/python -m pytest backend/tests`.
+- **M3**: gemma4 highlight detection (pluggable `backend/llm.py`). A `highlights`
+  worker job reads the transcript text and proposes candidate clips
+  (start/end/reason/score), shown in the Highlights rail with heat-ring scores.
+  "Use clip" narrows the editor to that range to trim and export — never
+  auto-finalized. Strict-JSON parse, retry-once-stricter, raw surfaced on
+  failure; never fabricates.
+- **M4**: vertical (9:16) export. `export_vertical` worker job renders the edit,
+  then in one frame-by-frame pass: mediapipe face-tracked crop to 1080×1920
+  (center-crop fallback when no face), and karaoke word-level captions drawn with
+  Pillow (configurable font/size/colour/position via job params). Output plays
+  with audio. "Make 9:16 short" in the toolbar.
 
 ### Transcription performance (Apple Silicon CPU)
 
@@ -68,9 +79,16 @@ The worker runs exactly **one job at a time** (16 GB Apple Silicon constraint).
 
 ## Prerequisites (verified on this machine)
 
-- ffmpeg / ffprobe 8.1.2 (`brew install ffmpeg`)
+- ffmpeg / ffprobe 8.1.2 (`brew install ffmpeg`). Note: captions are drawn in
+  Python (Pillow), so a libass-less ffmpeg build is fine.
 - Python 3.12 virtualenv at `.venv` with deps from `requirements.txt`
 - Ollama running with model `gemma4:latest` (used from M3 onward)
+- MediaPipe face-detector model (one-time, for vertical reframe):
+  ```bash
+  mkdir -p data/models
+  curl -L -o data/models/blaze_face_short_range.tflite \
+    https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite
+  ```
 
 Recreate the Python environment if needed:
 

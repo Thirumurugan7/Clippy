@@ -315,6 +315,34 @@ def put_edit(video_id: str, body: EdlBody) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/videos/{video_id}/highlights")
+def generate_highlights(video_id: str) -> dict:
+    """Enqueue a gemma4 highlight-detection job over the video's transcript."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="highlights")
+    return {"job_id": job_id}
+
+
+@app.get("/api/videos/{video_id}/highlights")
+def get_highlights(video_id: str) -> dict:
+    """Return stored highlight candidates (and the raw model output)."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_highlights(video_id)
+    if row is None:
+        return {"ready": False, "clips": None}
+    return {
+        "ready": True,
+        "clips": json.loads(row["clips_json"]) if row["clips_json"] else None,
+        "model": row["model"],
+        "error": row["error"],
+        "raw": row["raw"],
+    }
+
+
 @app.post("/api/videos/{video_id}/export")
 def export_edit(video_id: str) -> dict:
     """Enqueue an export job that renders the saved EDL for this video.
@@ -330,11 +358,44 @@ def export_edit(video_id: str) -> dict:
     return {"job_id": job_id}
 
 
+@app.post("/api/videos/{video_id}/reframe")
+def generate_reframe(video_id: str) -> dict:
+    """Enqueue face-track analysis (for the live vertical preview + export)."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    path = config.EXPORTS_DIR / video_id / "reframe.json"
+    if path.exists():
+        return {"job_id": None, "ready": True}
+    job_id = db.create_job(video_id, job_type="reframe")
+    return {"job_id": job_id, "ready": False}
+
+
+@app.get("/api/videos/{video_id}/reframe")
+def get_reframe(video_id: str) -> dict:
+    path = config.EXPORTS_DIR / video_id / "reframe.json"
+    if not path.exists():
+        return {"ready": False}
+    data = json.loads(path.read_text())
+    data["ready"] = True
+    return data
+
+
+@app.post("/api/videos/{video_id}/export_vertical")
+def export_vertical(video_id: str) -> dict:
+    """Enqueue a 9:16 vertical export: face-tracked reframe + burned captions."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="export_vertical")
+    return {"job_id": job_id}
+
+
 @app.get("/api/exports/{job_id}/file")
 def get_export_file(job_id: str, request: Request):
     """Stream an exported edited video (range-capable for the player)."""
     job = db.get_job(job_id)
-    if job is None or job["type"] != "export_edit":
+    if job is None or job["type"] not in ("export_edit", "export_vertical"):
         raise HTTPException(status_code=404, detail="export job not found")
     if job["status"] != "done" or not job["result_json"]:
         raise HTTPException(status_code=409, detail=f"export not ready (status={job['status']})")
