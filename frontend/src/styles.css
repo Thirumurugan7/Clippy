@@ -148,7 +148,9 @@ button:disabled { opacity: .45; cursor: default; }
 .player-wrap.vert { position: relative; }
 .src-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .vert-stage { position: relative; cursor: pointer; }
-.vert-canvas { display: block; height: 46vh; max-height: 540px; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; }
+/* Constrain by max dimensions only — the canvas keeps its own pixel ratio
+   (set per aspect) so 1:1 / 4:5 / 16:9 are cropped, never stretched. */
+.vert-canvas { display: block; max-height: 46vh; max-width: 100%; border-radius: 10px; background: #000; }
 .play-overlay {
   position: absolute; inset: 0; display: grid; place-items: center;
   font-size: 44px; color: rgba(255,255,255,.9); text-shadow: 0 2px 12px #000; pointer-events: none;
@@ -186,7 +188,7 @@ button:disabled { opacity: .45; cursor: default; }
 /* ---------- export panel ---------- */
 .export-panel { background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; flex-shrink: 0; }
 .vertical-result {
-  display: block; margin: 10px auto 0; max-height: 70vh; aspect-ratio: 9 / 16;
+  display: block; margin: 10px auto 0; max-height: 70vh; max-width: 100%;
   background: #000; border-radius: var(--r); border: 1px solid var(--line);
 }
 
