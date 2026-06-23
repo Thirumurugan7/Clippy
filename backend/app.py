@@ -25,6 +25,14 @@ from pydantic import BaseModel
 from . import config, db
 from .edl import validate_edl
 from .fillers import detect_fillers
+from .presets import ASPECTS, CAPTION_PRESETS
+
+DEFAULT_SETTINGS = {
+    "aspect": "9:16",
+    "framing": "auto",
+    "crop_cx": 0.5,
+    "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
+}
 
 app = FastAPI(title="ClipForge", version="0.1.0")
 
@@ -356,6 +364,37 @@ def export_edit(video_id: str) -> dict:
         raise HTTPException(status_code=400, detail="transcript not ready")
     job_id = db.create_job(video_id, job_type="export_edit")
     return {"job_id": job_id}
+
+
+class SettingsBody(BaseModel):
+    aspect: str
+    framing: str
+    crop_cx: float
+    caption: dict
+
+
+@app.get("/api/videos/{video_id}/settings")
+def get_settings(video_id: str) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_settings(video_id)
+    return json.loads(row["json"]) if row else dict(DEFAULT_SETTINGS)
+
+
+@app.put("/api/videos/{video_id}/settings")
+def put_settings(video_id: str, body: SettingsBody) -> dict:
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if body.aspect not in ASPECTS:
+        raise HTTPException(status_code=400, detail=f"unknown aspect {body.aspect}")
+    if body.framing not in ("auto", "manual"):
+        raise HTTPException(status_code=400, detail="framing must be auto|manual")
+    if not (0.0 <= body.crop_cx <= 1.0):
+        raise HTTPException(status_code=400, detail="crop_cx out of range")
+    if body.caption.get("preset") not in CAPTION_PRESETS:
+        raise HTTPException(status_code=400, detail="unknown caption preset")
+    db.save_settings(video_id, json.dumps(body.model_dump()))
+    return {"ok": True}
 
 
 @app.post("/api/videos/{video_id}/reframe")

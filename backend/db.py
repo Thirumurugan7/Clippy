@@ -115,6 +115,23 @@ def init_db() -> None:
                 error      TEXT,
                 updated_at REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                video_id   TEXT PRIMARY KEY REFERENCES videos(id),
+                json       TEXT NOT NULL,
+                updated_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ai_edits (
+                video_id       TEXT PRIMARY KEY REFERENCES videos(id),
+                clip_json      TEXT,
+                aspect         TEXT,
+                caption_preset TEXT,
+                reason         TEXT,
+                raw            TEXT,
+                error          TEXT,
+                updated_at     REAL NOT NULL
+            );
             """
         )
         # Migration for databases created before params_json existed.
@@ -241,6 +258,37 @@ def get_highlights(video_id: str) -> Optional[sqlite3.Row]:
         return conn.execute(
             "SELECT * FROM highlights WHERE video_id=?", (video_id,)
         ).fetchone()
+
+
+# --------------------------------------------------------------------------- #
+# Settings (framing + captions) and AI-edit proposals
+# --------------------------------------------------------------------------- #
+def get_settings(video_id: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM settings WHERE video_id=?", (video_id,)).fetchone()
+
+
+def save_settings(video_id: str, json_str: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (video_id, json, updated_at) VALUES (?, ?, ?)",
+            (video_id, json_str, time.time()),
+        )
+
+
+def save_ai_edit(video_id: str, *, clip_json, aspect, caption_preset, reason, raw, error) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO ai_edits
+               (video_id, clip_json, aspect, caption_preset, reason, raw, error, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (video_id, clip_json, aspect, caption_preset, reason, raw, error, time.time()),
+        )
+
+
+def get_ai_edit(video_id: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute("SELECT * FROM ai_edits WHERE video_id=?", (video_id,)).fetchone()
 
 
 # --------------------------------------------------------------------------- #
