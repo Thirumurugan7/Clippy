@@ -106,6 +106,15 @@ def init_db() -> None:
                 edl_json   TEXT NOT NULL,
                 updated_at REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS highlights (
+                video_id   TEXT PRIMARY KEY REFERENCES videos(id),
+                clips_json TEXT,
+                raw        TEXT,
+                model      TEXT,
+                error      TEXT,
+                updated_at REAL NOT NULL
+            );
             """
         )
         # Migration for databases created before params_json existed.
@@ -209,6 +218,29 @@ def save_edit(video_id: str, edl_json: str) -> None:
             "INSERT OR REPLACE INTO edits (video_id, edl_json, updated_at) VALUES (?, ?, ?)",
             (video_id, edl_json, time.time()),
         )
+
+
+# --------------------------------------------------------------------------- #
+# Highlights (gemma4 candidate clips)
+# --------------------------------------------------------------------------- #
+def save_highlights(
+    video_id: str, *, clips_json: Optional[str], raw: Optional[str],
+    model: Optional[str], error: Optional[str],
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO highlights
+               (video_id, clips_json, raw, model, error, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (video_id, clips_json, raw, model, error, time.time()),
+        )
+
+
+def get_highlights(video_id: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM highlights WHERE video_id=?", (video_id,)
+        ).fetchone()
 
 
 # --------------------------------------------------------------------------- #

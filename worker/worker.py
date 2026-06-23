@@ -23,6 +23,7 @@ from worker.steps.probe import run_probe
 from worker.steps.transcribe import run_transcribe
 from worker.steps.export_edit import run_export_edit
 from worker.steps.waveform import run_waveform
+from worker.steps.highlights import run_highlights_job
 
 POLL_INTERVAL_SECONDS = 1.0
 
@@ -32,6 +33,7 @@ HANDLERS = {
     "probe": lambda job: run_probe(job["video_id"]),
     "transcribe": lambda job: run_transcribe(job["video_id"]),
     "waveform": lambda job: run_waveform(job["video_id"]),
+    "highlights": lambda job: run_highlights_job(job["video_id"]),
     "export_edit": run_export_edit,
 }
 

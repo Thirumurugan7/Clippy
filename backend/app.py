@@ -315,6 +315,34 @@ def put_edit(video_id: str, body: EdlBody) -> dict:
     return {"ok": True}
 
 
+@app.post("/api/videos/{video_id}/highlights")
+def generate_highlights(video_id: str) -> dict:
+    """Enqueue a gemma4 highlight-detection job over the video's transcript."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    job_id = db.create_job(video_id, job_type="highlights")
+    return {"job_id": job_id}
+
+
+@app.get("/api/videos/{video_id}/highlights")
+def get_highlights(video_id: str) -> dict:
+    """Return stored highlight candidates (and the raw model output)."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_highlights(video_id)
+    if row is None:
+        return {"ready": False, "clips": None}
+    return {
+        "ready": True,
+        "clips": json.loads(row["clips_json"]) if row["clips_json"] else None,
+        "model": row["model"],
+        "error": row["error"],
+        "raw": row["raw"],
+    }
+
+
 @app.post("/api/videos/{video_id}/export")
 def export_edit(video_id: str) -> dict:
     """Enqueue an export job that renders the saved EDL for this video.
