@@ -72,8 +72,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <span className="brand-mark">◣</span>
-          <span className="brand-name">Clippy</span>
+          <img src="/clippy-logo.png" alt="Clippy" className="brand-logo" />
           <span className="brand-tag">long video → shorts</span>
         </div>
         <div className="topbar-actions">
@@ -131,7 +130,7 @@ export default function App() {
           <EditorPage key={currentVideoId} videoId={currentVideoId} />
         ) : (
           <div className="welcome">
-            <div className="welcome-mark">◣</div>
+            <img src="/clippy-logo.png" alt="Clippy" className="welcome-logo" />
             <h1>Forge shorts from any long video</h1>
             <p>Upload a video. Clippy transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
             <button

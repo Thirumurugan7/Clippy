@@ -13,10 +13,11 @@
   --text: #eef0f4;
   --muted: #99a2b2;
   --faint: #687085;
-  --amber: #ff8a3d;
-  --amber-2: #ffb259;
-  --amber-deep: #e5631f;
-  --amber-glow: rgba(255, 138, 61, 0.35);
+  /* Brand accent — Clippy violet (matches the logo). */
+  --amber: #8b6cf6;
+  --amber-2: #a78bfa;
+  --amber-deep: #6d4ad6;
+  --amber-glow: rgba(139, 108, 246, 0.4);
   --green: #4fd39a;
   --red: #ef5f57;
   --r: 12px;
@@ -64,9 +65,8 @@ button:disabled { opacity: .45; cursor: default; }
   padding: 0 18px; border-bottom: 1px solid var(--line);
   background: linear-gradient(180deg, var(--bg-1), var(--bg-0));
 }
-.brand { display: flex; align-items: baseline; gap: 9px; }
-.brand-mark { color: var(--amber); font-size: 16px; text-shadow: 0 0 12px var(--amber-glow); }
-.brand-name { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-logo { height: 40px; width: 40px; object-fit: contain; background: #fff; border-radius: 9px; padding: 3px; box-shadow: 0 4px 14px -8px var(--amber-glow); }
 .brand-tag { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 
@@ -99,7 +99,7 @@ button:disabled { opacity: .45; cursor: default; }
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
   text-align: center; padding: 24px; gap: 14px;
 }
-.welcome-mark { font-size: 56px; color: var(--amber); text-shadow: 0 0 40px var(--amber-glow); }
+.welcome-logo { width: 150px; height: 150px; object-fit: contain; background: #fff; border-radius: 22px; padding: 14px; box-shadow: 0 24px 60px -24px var(--amber-glow); }
 .welcome h1 { font-size: 34px; max-width: 16ch; }
 .welcome p { color: var(--muted); max-width: 52ch; line-height: 1.6; margin: 0; }
 .welcome .btn-amber { margin-top: 8px; }

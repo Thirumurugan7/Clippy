@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/clippy-logo.png" alt="Clippy" width="160" />
+</p>
+
 # Clippy
 
 Local-first tool that turns one long video into vertical short-form clips, edited
