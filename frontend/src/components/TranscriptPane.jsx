@@ -1,33 +1,39 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { projectWords } from "../edl.js";
 
 // Renders the transcript as a pure projection of the EDL (so it always matches
-// the timeline order). Click a word = seek the preview. Drag across words then
-// press Delete/Backspace = cut that source range from the EDL.
+// the timeline order). Interactions:
+//   - single click a word  -> seek the preview there
+//   - drag across words     -> select that range
+//   - double-click a word   -> select just that word
+//   - Delete/Backspace      -> cut the selected source range from the EDL
 export function TranscriptPane({ transcript, edl, activeVirtual, onSeek, onDeleteSourceRange }) {
   const words = useMemo(
     () => (transcript && edl ? projectWords(edl, transcript.words) : []),
     [transcript, edl]
   );
-  const [sel, setSel] = useState(null); // {a,b} indices into `words`
-  const [dragging, setDragging] = useState(false);
+  const [sel, setSel] = useState(null); // persisted selection {a,b} (indices)
+  const anchor = useRef(null); // drag anchor index
+  const moved = useRef(false); // did the pointer move during this drag
 
   function isActive(w) {
     return activeVirtual >= w.virtualStart && activeVirtual <= w.virtualEnd;
   }
   function inSel(idx) {
     if (!sel) return false;
+    return idx >= Math.min(sel.a, sel.b) && idx <= Math.max(sel.a, sel.b);
+  }
+  function deleteSelection() {
+    if (!sel) return;
     const lo = Math.min(sel.a, sel.b);
     const hi = Math.max(sel.a, sel.b);
-    return idx >= lo && idx <= hi;
+    onDeleteSourceRange(words[lo].start, words[hi].end);
+    setSel(null);
   }
   function onKeyDown(e) {
     if ((e.key === "Delete" || e.key === "Backspace") && sel) {
-      const lo = Math.min(sel.a, sel.b);
-      const hi = Math.max(sel.a, sel.b);
-      onDeleteSourceRange(words[lo].start, words[hi].end);
-      setSel(null);
       e.preventDefault();
+      deleteSelection();
     }
   }
 
@@ -47,16 +53,21 @@ export function TranscriptPane({ transcript, edl, activeVirtual, onSeek, onDelet
           }
           title={`${w.start.toFixed(2)}s`}
           onMouseDown={() => {
-            setSel({ a: idx, b: idx });
-            setDragging(true);
+            anchor.current = idx;
+            moved.current = false;
+            setSel(null);
           }}
           onMouseEnter={() => {
-            if (dragging) setSel((s) => (s ? { ...s, b: idx } : s));
+            if (anchor.current != null) {
+              moved.current = true;
+              setSel({ a: anchor.current, b: idx });
+            }
           }}
           onMouseUp={() => {
-            setDragging(false);
-            if (sel && sel.a === idx && sel.b === idx) onSeek(w.virtualStart);
+            if (anchor.current != null && !moved.current) onSeek(w.virtualStart);
+            anchor.current = null;
           }}
+          onDoubleClick={() => setSel({ a: idx, b: idx })}
         >
           {w.word}
         </span>

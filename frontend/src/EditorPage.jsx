@@ -5,23 +5,41 @@ import { TranscriptPane } from "./components/TranscriptPane.jsx";
 import { Timeline } from "./components/Timeline.jsx";
 import { Toolbar } from "./components/Toolbar.jsx";
 
-// The editor: preview (top), transcript (middle), timeline (bottom) — all driven
-// by one EDL via useEdl. Loads transcript + waveform + duration for the video.
+// Gate the editor until probe has set the real duration — otherwise the default
+// EDL would be a degenerate [0,0] segment that projects zero words.
 export function EditorPage({ videoId }) {
+  const [duration, setDuration] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setDuration(0);
+    (function poll() {
+      fetch(`/api/videos/${videoId}`)
+        .then((r) => r.json())
+        .then((v) => {
+          if (cancelled) return;
+          if (v.duration_seconds > 0) setDuration(v.duration_seconds);
+          else setTimeout(poll, 1000);
+        })
+        .catch(() => !cancelled && setTimeout(poll, 1000));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [videoId]);
+
+  if (!duration) return <div className="card mono">Analyzing video…</div>;
+  return <EditorInner videoId={videoId} duration={duration} />;
+}
+
+// The editor proper: preview (top), transcript (middle), timeline (bottom) — all
+// driven by one EDL via useEdl. Mounted only once duration is known.
+function EditorInner({ videoId, duration }) {
   const { edl, ops, undo, redo, canUndo, canRedo, saving } = useEdl(videoId);
   const [transcript, setTranscript] = useState(null);
   const [peaks, setPeaks] = useState(null);
-  const [duration, setDuration] = useState(0);
   const [activeVirtual, setActiveVirtual] = useState(0);
   const [exportState, setExportState] = useState(null);
   const playerRef = useRef(null);
-
-  // video metadata (original duration)
-  useEffect(() => {
-    fetch(`/api/videos/${videoId}`)
-      .then((r) => r.json())
-      .then((v) => setDuration(v.duration_seconds || 0));
-  }, [videoId]);
 
   // poll transcript until ready
   useEffect(() => {

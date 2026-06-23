@@ -23,7 +23,17 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [videos, setVideos] = useState({});
   const [message, setMessage] = useState(null);
-  const [currentVideoId, setCurrentVideoId] = useState(null);
+  // Keep the open video in the URL (?v=...) so a reload stays in the editor.
+  const [currentVideoId, setCurrentVideoIdState] = useState(
+    () => new URLSearchParams(window.location.search).get("v")
+  );
+  const setCurrentVideoId = useCallback((id) => {
+    setCurrentVideoIdState(id);
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set("v", id);
+    else url.searchParams.delete("v");
+    window.history.replaceState({}, "", url);
+  }, []);
 
   const refreshJobs = useCallback(async () => {
     try {
