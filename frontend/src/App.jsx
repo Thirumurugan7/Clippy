@@ -1,11 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { EditorPage } from "./EditorPage.jsx";
+import { useAuth } from "./hooks/useAuth.js";
+import { AuthScreen } from "./components/AuthScreen.jsx";
 
 function StatusDot({ status }) {
   return <span className={`dot dot-${status}`} title={status} />;
 }
 
 export default function App() {
+  const { user, login, register, logout } = useAuth();
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [jobs, setJobs] = useState([]);
@@ -68,6 +71,9 @@ export default function App() {
 
   const activeCount = jobs.filter((j) => j.status === "running" || j.status === "queued").length;
 
+  if (user === undefined) return <div className="loading-shell mono">Loading…</div>;
+  if (user === null) return <AuthScreen onLogin={login} onRegister={register} />;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -76,6 +82,7 @@ export default function App() {
           <span className="brand-tag">long video → shorts</span>
         </div>
         <div className="topbar-actions">
+          <span className="user-email mono">{user.email}</span>
           <button
             className="btn-amber"
             onClick={() => fileInputRef.current?.click()}
@@ -122,6 +129,9 @@ export default function App() {
               </div>
             )}
           </div>
+          <button className="btn-ghost" onClick={() => { setCurrentVideoId(null); logout(); }}>
+            Sign out
+          </button>
         </div>
       </header>
 
