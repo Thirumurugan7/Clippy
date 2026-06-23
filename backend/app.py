@@ -127,6 +127,7 @@ async def upload(file: UploadFile = File(...)) -> dict:
     # creation order, one at a time.
     probe_job_id = db.create_job(video_id, job_type="probe")
     transcribe_job_id = db.create_job(video_id, job_type="transcribe")
+    db.create_job(video_id, job_type="waveform")
 
     return {
         "video_id": video_id,
@@ -258,6 +259,15 @@ def get_video_file(video_id: str, request: Request):
     if video is None:
         raise HTTPException(status_code=404, detail="video not found")
     return _stream_with_range(Path(video["stored_path"]), request)
+
+
+@app.get("/api/videos/{video_id}/waveform")
+def get_waveform(video_id: str) -> dict:
+    """Return precomputed audio peaks for the timeline (404 until the job runs)."""
+    path = config.EXPORTS_DIR / video_id / "waveform.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="waveform not ready")
+    return json.loads(path.read_text())
 
 
 @app.get("/api/videos/{video_id}/fillers")
