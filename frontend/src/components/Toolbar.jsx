@@ -8,6 +8,7 @@ export function Toolbar({
   canUndo,
   canRedo,
   saving,
+  saveError,
   exporting,
 }) {
   return (
@@ -24,7 +25,9 @@ export function Toolbar({
       <button className="btn-primary" onClick={onExport} disabled={exporting}>
         {exporting ? "Exporting…" : "Export edited video"}
       </button>
-      <span className="save-state mono">{saving ? "saving…" : "saved"}</span>
+      <span className={"save-state mono" + (saveError ? " error" : "")}>
+        {saveError ? "save failed" : saving ? "saving…" : "saved"}
+      </span>
     </div>
   );
 }

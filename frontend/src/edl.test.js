@@ -78,6 +78,12 @@ describe("edl operations", () => {
     expect(after[1]).toMatchObject({ sourceStart: 5, sourceEnd: 10 });
     expect(totalDuration(after)).toBe(9);
   });
+  it("deleteSourceRange drops sub-MIN_SEG slivers (no invalid segment)", () => {
+    // deleting [0.01, 5] would leave a 0.01s left sliver — it must be dropped.
+    const after = deleteSourceRange(defaultEdl(10), 0.01, 5);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ sourceStart: 5, sourceEnd: 10 });
+  });
 });
 
 describe("transcript projection", () => {

@@ -34,7 +34,7 @@ export function EditorPage({ videoId }) {
 // The editor proper: preview (top), transcript (middle), timeline (bottom) — all
 // driven by one EDL via useEdl. Mounted only once duration is known.
 function EditorInner({ videoId, duration }) {
-  const { edl, ops, undo, redo, canUndo, canRedo, saving } = useEdl(videoId);
+  const { edl, ops, undo, redo, canUndo, canRedo, saving, saveError } = useEdl(videoId);
   const [transcript, setTranscript] = useState(null);
   const [peaks, setPeaks] = useState(null);
   const [activeVirtual, setActiveVirtual] = useState(0);
@@ -147,6 +147,7 @@ function EditorInner({ videoId, duration }) {
         canUndo={canUndo}
         canRedo={canRedo}
         saving={saving}
+        saveError={saveError}
         exporting={exporting}
       />
 

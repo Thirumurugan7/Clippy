@@ -95,10 +95,12 @@ export function deleteSourceRange(edl, rangeStart, rangeEnd) {
       out.push(s); // no overlap
       continue;
     }
-    if (rangeStart > s.sourceStart) {
+    // Keep surrounding fragments, but drop slivers shorter than MIN_SEG so we
+    // never emit a segment the backend's validation (MIN_SEG) would reject.
+    if (rangeStart - s.sourceStart >= MIN_SEG) {
       out.push({ id: newId(), sourceStart: s.sourceStart, sourceEnd: rangeStart });
     }
-    if (rangeEnd < s.sourceEnd) {
+    if (s.sourceEnd - rangeEnd >= MIN_SEG) {
       out.push({ id: newId(), sourceStart: rangeEnd, sourceEnd: s.sourceEnd });
     }
   }

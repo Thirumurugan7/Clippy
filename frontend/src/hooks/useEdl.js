@@ -9,6 +9,7 @@ export function useEdl(videoId) {
   const [past, setPast] = useState([]);
   const [future, setFuture] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const saveTimer = useRef(null);
 
   // Load saved EDL (or backend default) when the video changes.
@@ -33,11 +34,14 @@ export function useEdl(videoId) {
       saveTimer.current = setTimeout(async () => {
         setSaving(true);
         try {
-          await fetch(`/api/videos/${videoId}/edit`, {
+          const res = await fetch(`/api/videos/${videoId}/edit`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ segments: next }),
           });
+          setSaveError(!res.ok);
+        } catch (e) {
+          setSaveError(true);
         } finally {
           setSaving(false);
         }
@@ -104,5 +108,6 @@ export function useEdl(videoId) {
     canUndo: past.length > 0,
     canRedo: future.length > 0,
     saving,
+    saveError,
   };
 }
