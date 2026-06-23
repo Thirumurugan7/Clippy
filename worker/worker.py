@@ -35,7 +35,7 @@ POLL_INTERVAL_SECONDS = 1.0
 # Handlers receive the whole job row so they can read params_json when needed.
 HANDLERS = {
     "probe": lambda job: run_probe(job["video_id"]),
-    "transcribe": lambda job: run_transcribe(job["video_id"]),
+    "transcribe": lambda job: run_transcribe(job["video_id"], job["id"]),
     "waveform": lambda job: run_waveform(job["video_id"]),
     "highlights": lambda job: run_highlights_job(job["video_id"]),
     "reframe": lambda job: run_reframe(job["video_id"]),

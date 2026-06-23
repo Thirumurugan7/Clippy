@@ -156,6 +156,9 @@ def init_db() -> None:
         vcols = [r["name"] for r in conn.execute("PRAGMA table_info(videos)")]
         if "owner_id" not in vcols:
             conn.execute("ALTER TABLE videos ADD COLUMN owner_id TEXT")
+        # Migration: job progress (0..1), e.g. transcription.
+        if "progress" not in cols:
+            conn.execute("ALTER TABLE jobs ADD COLUMN progress REAL DEFAULT 0")
 
 
 # --------------------------------------------------------------------------- #
@@ -433,6 +436,19 @@ def claim_next_job() -> Optional[sqlite3.Row]:
         if cur.rowcount != 1:
             return None  # someone else claimed it first
         return conn.execute("SELECT * FROM jobs WHERE id=?", (row["id"],)).fetchone()
+
+
+def update_job_progress(job_id: str, progress: float) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE jobs SET progress=? WHERE id=?", (progress, job_id))
+
+
+def latest_job(video_id: str, job_type: str) -> Optional[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM jobs WHERE video_id=? AND type=? ORDER BY created_at DESC LIMIT 1",
+            (video_id, job_type),
+        ).fetchone()
 
 
 def finish_job(job_id: str, *, result_json: Optional[str] = None) -> None:

@@ -18,7 +18,7 @@ def _clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
-def compute_crop(W: int, H: int, aspect: str, cx_norm: float) -> tuple[int, int, int, int]:
+def compute_crop(W: int, H: int, aspect: str, cx_norm: float, cy_norm: float = 0.5) -> tuple[int, int, int, int]:
     ratio = ASPECTS.get(aspect, ASPECTS["9:16"])["ratio"]  # w/h
     if W / H >= ratio:
         ch = H
@@ -28,7 +28,6 @@ def compute_crop(W: int, H: int, aspect: str, cx_norm: float) -> tuple[int, int,
         ch = round(W / ratio)
     cw = min(cw, W)
     ch = min(ch, H)
-    cx = cx_norm * W
-    sx = int(_clamp(round(cx - cw / 2), 0, W - cw))
-    sy = int(_clamp(round((H - ch) / 2), 0, H - ch))
+    sx = int(_clamp(round(cx_norm * W - cw / 2), 0, W - cw))
+    sy = int(_clamp(round(cy_norm * H - ch / 2), 0, H - ch))
     return sx, sy, cw, ch

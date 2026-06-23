@@ -8,7 +8,7 @@ export function targetDims(aspect) {
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-export function computeCrop(W, H, aspect, cxNorm) {
+export function computeCrop(W, H, aspect, cxNorm, cyNorm = 0.5) {
   const ratio = (ASPECTS[aspect] || ASPECTS["9:16"]).ratio;
   let cw, ch;
   if (W / H >= ratio) {
@@ -20,8 +20,7 @@ export function computeCrop(W, H, aspect, cxNorm) {
   }
   cw = Math.min(cw, W);
   ch = Math.min(ch, H);
-  const cx = cxNorm * W;
-  const sx = Math.round(clamp(cx - cw / 2, 0, W - cw));
-  const sy = Math.round(clamp((H - ch) / 2, 0, H - ch));
+  const sx = Math.round(clamp(cxNorm * W - cw / 2, 0, W - cw));
+  const sy = Math.round(clamp(cyNorm * H - ch / 2, 0, H - ch));
   return [sx, sy, cw, ch];
 }

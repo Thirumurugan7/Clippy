@@ -37,7 +37,7 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx) -> dict:
+def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx, crop_cy) -> dict:
     """Crop the edited intermediate to the chosen aspect, following the
     precomputed face trajectory (auto) or a fixed centre (manual), draw captions,
     and mux audio. Same trajectory as the live preview, so export == preview.
@@ -69,11 +69,13 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect,
         vt = total / fps
         if framing == "manual":
             cur_cx = crop_cx
+            cy = crop_cy
         else:
             src_t = virtual_to_source(segments, vt)
             target = cx_at(centers, src_t) if centers else 0.5
             cur_cx += SMOOTH_ALPHA * (target - cur_cx)
-        sx, sy, cw, ch = compute_crop(W, H, aspect, cur_cx)
+            cy = 0.5
+        sx, sy, cw, ch = compute_crop(W, H, aspect, cur_cx, cy)
         out = cv2.resize(frame[sy:sy + ch, sx:sx + cw], (tw, th), interpolation=cv2.INTER_AREA)
         if renderer is not None:
             out = renderer.draw(out, vt)
@@ -122,6 +124,7 @@ def run_vertical_export(job) -> dict:
     aspect = settings.get("aspect", "9:16")
     framing = settings.get("framing", "auto")
     crop_cx = float(settings.get("crop_cx", 0.5))
+    crop_cy = float(settings.get("crop_cy", 0.5))
     style = resolve_caption_style(settings.get("caption"))
     tw, th = target_dims(aspect)
 
@@ -141,7 +144,7 @@ def run_vertical_export(job) -> dict:
     renderer = CaptionRenderer(projected, width=tw, height=th, style=style) if projected else None
 
     # 3. crop (aspect + trajectory/manual) + caption + mux
-    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments, aspect, framing, crop_cx)
+    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments, aspect, framing, crop_cx, crop_cy)
     intermediate.unlink(missing_ok=True)
 
     out_duration = _probe_duration(str(final))

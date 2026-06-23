@@ -36,6 +36,7 @@ DEFAULT_SETTINGS = {
     "aspect": "9:16",
     "framing": "auto",
     "crop_cx": 0.5,
+    "crop_cy": 0.5,
     "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
 }
 
@@ -271,7 +272,12 @@ def get_transcript(video_id: str) -> dict:
         raise HTTPException(status_code=404, detail="video not found")
     row = db.get_transcript(video_id)
     if row is None:
-        return {"ready": False}
+        job = db.latest_job(video_id, "transcribe")
+        return {
+            "ready": False,
+            "progress": (job["progress"] if job else 0.0) or 0.0,
+            "status": job["status"] if job else "queued",
+        }
     return {
         "ready": True,
         "video_id": row["video_id"],
@@ -491,6 +497,7 @@ class SettingsBody(BaseModel):
     aspect: str
     framing: str
     crop_cx: float
+    crop_cy: float = 0.5
     caption: dict
 
 

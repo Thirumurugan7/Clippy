@@ -7,7 +7,7 @@ import { projectWords } from "../edl.js";
 //   - drag across words     -> select that range
 //   - double-click a word   -> select just that word
 //   - Delete/Backspace      -> cut the selected source range from the EDL
-export function TranscriptPane({ transcript, edl, activeVirtual, onSeek, onDeleteSourceRange }) {
+export function TranscriptPane({ transcript, edl, activeVirtual, txProgress, onSeek, onDeleteSourceRange }) {
   const words = useMemo(
     () => (transcript && edl ? projectWords(edl, transcript.words) : []),
     [transcript, edl]
@@ -38,7 +38,17 @@ export function TranscriptPane({ transcript, edl, activeVirtual, onSeek, onDelet
   }
 
   if (!transcript) {
-    return <div className="transcript-empty mono">Transcribing…</div>;
+    const pct = Math.round((txProgress?.progress || 0) * 100);
+    const running = txProgress?.status === "running" || pct > 0;
+    return (
+      <div className="transcript-empty">
+        <div className="tx-row mono">
+          <span>{running ? `Transcribing… ${pct}%` : "Transcription queued…"}</span>
+        </div>
+        <div className="tx-bar"><div className="tx-fill" style={{ width: `${Math.max(3, pct)}%` }} /></div>
+        <p className="muted mono tx-note">Runs locally with faster-whisper — roughly real-time on this machine.</p>
+      </div>
+    );
   }
 
   return (

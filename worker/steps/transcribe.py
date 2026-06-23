@@ -55,7 +55,7 @@ def _get_model():
     return _model
 
 
-def run_transcribe(video_id: str) -> dict:
+def run_transcribe(video_id: str, job_id: str | None = None) -> dict:
     video = db.get_video(video_id)
     if video is None:
         raise RuntimeError(f"video {video_id} not found")
@@ -75,8 +75,13 @@ def run_transcribe(video_id: str) -> dict:
 
     words: list[dict] = []
     segments: list[dict] = []
+    duration = info.duration or 0.0
 
     for seg in segments_iter:
+        # Report progress (last segment end / audio duration) so the UI can show
+        # a bar — faster-whisper yields segments lazily as it decodes.
+        if job_id and duration > 0:
+            db.update_job_progress(job_id, min(0.99, seg.end / duration))
         word_start_idx = len(words)
         if seg.words:
             for w in seg.words:

@@ -34,7 +34,7 @@ export function CropPanel({ settings, setSettings }) {
       </div>
       <p className="panel-sub">
         {settings.framing === "manual"
-          ? "Drag left/right on the preview to reposition the crop."
+          ? "Drag the crop box on the preview to frame it exactly."
           : "The crop follows the main face automatically."}
       </p>
     </div>

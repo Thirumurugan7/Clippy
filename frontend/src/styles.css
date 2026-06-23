@@ -147,7 +147,8 @@ button:disabled { opacity: .45; cursor: default; }
 
 .player-wrap.vert { position: relative; }
 .src-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.vert-stage { position: relative; cursor: pointer; }
+.vert-stage { position: relative; cursor: pointer; display: inline-block; }
+.crop-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 11px; pointer-events: none; }
 /* Constrain by max dimensions only — the canvas keeps its own pixel ratio
    (set per aspect) so 1:1 / 4:5 / 16:9 are cropped, never stretched. */
 .vert-canvas { display: block; max-height: 46vh; max-width: 100%; border-radius: 10px; background: #000; }
@@ -180,6 +181,10 @@ button:disabled { opacity: .45; cursor: default; }
 }
 .transcript:focus-visible { border-color: var(--amber); }
 .transcript-empty { padding: 18px; background: var(--bg-1); border: 1px solid var(--line); border-radius: var(--r); color: var(--muted); }
+.tx-row { display: flex; justify-content: space-between; color: var(--text); margin-bottom: 10px; }
+.tx-bar { height: 8px; background: var(--bg-3); border-radius: 6px; overflow: hidden; }
+.tx-fill { height: 100%; background: linear-gradient(90deg, var(--amber-2), var(--amber)); border-radius: 6px; transition: width .4s ease; }
+.tx-note { margin: 10px 0 0; font-size: 11px; }
 .word { cursor: pointer; padding: 1px 2px; border-radius: 4px; }
 .word:hover { background: var(--bg-3); }
 .word-active { background: rgba(255,138,61,.16); color: var(--amber); box-shadow: inset 0 -2px 0 var(--amber); }

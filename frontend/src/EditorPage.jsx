@@ -46,6 +46,7 @@ function EditorInner({ videoId, duration }) {
   const { edl, ops, undo, redo, canUndo, canRedo, saving, saveError } = useEdl(videoId);
   const { settings, setSettings } = useSettings(videoId);
   const [transcript, setTranscript] = useState(null);
+  const [txProgress, setTxProgress] = useState({ progress: 0, status: "queued" });
   const [peaks, setPeaks] = useState(null);
   const [activeVirtual, setActiveVirtual] = useState(0);
   const [exportState, setExportState] = useState(null);
@@ -79,7 +80,8 @@ function EditorInner({ videoId, duration }) {
     (function poll() {
       fetch(`/api/videos/${videoId}/transcript`).then((r) => (r.ok ? r.json() : { ready: false })).then((d) => {
         if (c) return;
-        d.ready ? setTranscript(d) : setTimeout(poll, 2000);
+        if (d.ready) setTranscript(d);
+        else { setTxProgress({ progress: d.progress || 0, status: d.status || "queued" }); setTimeout(poll, 1500); }
       }).catch(() => !c && setTimeout(poll, 2000));
     })();
     return () => { c = true; };
@@ -174,7 +176,7 @@ function EditorInner({ videoId, duration }) {
               reframe={reframe}
               captionLines={captionLines}
               settings={settings}
-              onCropDrag={(cx) => setSettings({ crop_cx: cx, framing: "manual" })}
+              onCropDrag={(cx, cy) => setSettings({ crop_cx: cx, crop_cy: cy, framing: "manual" })}
             />
           </div>
 
@@ -187,6 +189,7 @@ function EditorInner({ videoId, duration }) {
 
           <TranscriptPane
             transcript={transcript} edl={edl} activeVirtual={activeVirtual}
+            txProgress={txProgress}
             onSeek={seek} onDeleteSourceRange={(a, b) => ops.deleteSourceRange(a, b)}
           />
 
