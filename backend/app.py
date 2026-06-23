@@ -315,20 +315,19 @@ def put_edit(video_id: str, body: EdlBody) -> dict:
     return {"ok": True}
 
 
-class ExportRequest(BaseModel):
-    delete_word_indices: list[int] = []
-
-
 @app.post("/api/videos/{video_id}/export")
-def export_edit(video_id: str, req: ExportRequest) -> dict:
-    """Enqueue an export job that cuts the deleted words' time spans."""
+def export_edit(video_id: str) -> dict:
+    """Enqueue an export job that renders the saved EDL for this video.
+
+    The editor PUTs the EDL (autosave) before calling this, so no body is
+    needed; the worker reads the saved EDL.
+    """
     if db.get_video(video_id) is None:
         raise HTTPException(status_code=404, detail="video not found")
     if db.get_transcript(video_id) is None:
         raise HTTPException(status_code=400, detail="transcript not ready")
-    params = json.dumps({"delete_word_indices": sorted(set(req.delete_word_indices))})
-    job_id = db.create_job(video_id, job_type="export_edit", params_json=params)
-    return {"job_id": job_id, "deleted": len(set(req.delete_word_indices))}
+    job_id = db.create_job(video_id, job_type="export_edit")
+    return {"job_id": job_id}
 
 
 @app.get("/api/exports/{job_id}/file")
