@@ -16,25 +16,27 @@ from __future__ import annotations
 import json
 import subprocess
 import warnings
-from pathlib import Path
 
 import cv2
-import mediapipe as mp
-from mediapipe.tasks.python import vision, BaseOptions
 
 from backend import db, config
-from backend.edl import ordered_intervals, project_words
+from backend.edl import ordered_intervals, project_words, virtual_to_source, cx_at
 from backend.captions import CaptionRenderer
 from worker.steps.export_edit import render_segments, _bin, _probe_duration
+from worker.steps.reframe import run_reframe
 
 warnings.filterwarnings("ignore")
 
 TARGET_W, TARGET_H = 1080, 1920
-DETECT_EVERY = 2     # run face detection every Nth frame
-SMOOTH_ALPHA = 0.15  # EMA toward the detected centre (lower = smoother)
+SMOOTH_ALPHA = 0.2  # EMA over the per-frame centre to keep the pan smooth
 
 
-def _reframe_and_caption(in_path: str, out_path: str, renderer: CaptionRenderer | None) -> dict:
+def _reframe_and_caption(in_path, out_path, renderer, centers, segments) -> dict:
+    """Crop the edited intermediate to 9:16 following the precomputed face
+    trajectory (mapped via the EDL), draw captions, and mux audio. No detection
+    here — the trajectory comes from the shared reframe analysis, so the export
+    matches the live preview exactly.
+    """
     cap = cv2.VideoCapture(in_path)
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -48,13 +50,6 @@ def _reframe_and_caption(in_path: str, out_path: str, renderer: CaptionRenderer 
         crop_h = round(W * TARGET_H / TARGET_W)
     y0 = max(0, (H - crop_h) // 2)
 
-    opts = vision.FaceDetectorOptions(
-        base_options=BaseOptions(model_asset_path=str(config.FACE_MODEL_PATH)),
-        running_mode=vision.RunningMode.IMAGE,
-        min_detection_confidence=0.4,
-    )
-    detector = vision.FaceDetector.create_from_options(opts)
-
     ff = subprocess.Popen(
         [_bin("ffmpeg"), "-y",
          "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{TARGET_W}x{TARGET_H}",
@@ -67,26 +62,20 @@ def _reframe_and_caption(in_path: str, out_path: str, renderer: CaptionRenderer 
     )
     assert ff.stdin is not None
 
-    center_x = target_cx = W / 2.0
+    center_x = W / 2.0
     total = 0
-    detected = 0
     while True:
         ok, frame = cap.read()
         if not ok:
             break
-        if total % DETECT_EVERY == 0:
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            img = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            res = detector.detect(img)
-            if res.detections:
-                detected += 1
-                b = max(res.detections, key=lambda d: d.bounding_box.width).bounding_box
-                target_cx = b.origin_x + b.width / 2.0
-        center_x += SMOOTH_ALPHA * (target_cx - center_x)
+        vt = total / fps
+        src_t = virtual_to_source(segments, vt)
+        target = cx_at(centers, src_t) * W if centers else W / 2.0
+        center_x += SMOOTH_ALPHA * (target - center_x)
         x0 = int(min(max(center_x - crop_w / 2.0, 0), W - crop_w))
         out = cv2.resize(frame[y0:y0 + crop_h, x0:x0 + crop_w], (TARGET_W, TARGET_H), interpolation=cv2.INTER_AREA)
         if renderer is not None:
-            out = renderer.draw(out, total / fps)
+            out = renderer.draw(out, vt)
         try:
             ff.stdin.write(out.tobytes())
         except BrokenPipeError:
@@ -94,14 +83,11 @@ def _reframe_and_caption(in_path: str, out_path: str, renderer: CaptionRenderer 
         total += 1
 
     cap.release()
-    detector.close()
     ff.stdin.close()
     ff.wait()
     if ff.returncode != 0:
         raise RuntimeError(f"ffmpeg reframe mux failed: {ff.stderr.read().decode()[-1200:]}")
-
-    rate = detected / max(1, total // DETECT_EVERY + 1)
-    return {"frames": total, "face_rate": round(rate, 3), "tracked": rate >= 0.15}
+    return {"frames": total}
 
 
 def run_vertical_export(job) -> dict:
@@ -129,6 +115,13 @@ def run_vertical_export(job) -> dict:
     intermediate = out_dir / f"{job['id']}_edit.mp4"
     final = out_dir / f"{job['id']}_vertical.mp4"
 
+    # Face-track trajectory (shared with the live preview); compute if missing.
+    reframe_path = out_dir / "reframe.json"
+    if not reframe_path.exists():
+        run_reframe(video_id)
+    rf = json.loads(reframe_path.read_text())
+    centers = rf.get("centers", [])
+
     # 1. edit -> horizontal intermediate
     render_segments(video["stored_path"], kept, has_audio, str(intermediate))
 
@@ -138,8 +131,8 @@ def run_vertical_export(job) -> dict:
     style = {k: params[k] for k in ("fontsize", "primary", "margin_v", "max_words") if k in params}
     renderer = CaptionRenderer(projected, **style) if projected else None
 
-    # 3. reframe + caption + mux in one pass
-    rf = _reframe_and_caption(str(intermediate), str(final), renderer)
+    # 3. crop (precomputed trajectory) + caption + mux
+    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments)
     intermediate.unlink(missing_ok=True)
 
     out_duration = _probe_duration(str(final))
@@ -148,7 +141,7 @@ def run_vertical_export(job) -> dict:
         "width": TARGET_W,
         "height": TARGET_H,
         "duration": round(out_duration, 3),
-        "face_tracked": rf["tracked"],
-        "face_rate": rf["face_rate"],
+        "face_tracked": rf.get("tracked", False),
+        "face_rate": rf.get("face_rate", 0.0),
         "num_caption_words": len(projected),
     }

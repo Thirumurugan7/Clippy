@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useEdl } from "./hooks/useEdl.js";
-import { newId, sourceToVirtual } from "./edl.js";
+import { newId, sourceToVirtual, projectWords } from "./edl.js";
+import { groupLines } from "./captionLayout.js";
 import { PreviewPlayer } from "./components/PreviewPlayer.jsx";
 import { TranscriptPane } from "./components/TranscriptPane.jsx";
 import { Timeline } from "./components/Timeline.jsx";
@@ -40,7 +41,33 @@ function EditorInner({ videoId, duration }) {
   const [activeVirtual, setActiveVirtual] = useState(0);
   const [exportState, setExportState] = useState(null);
   const [activeClip, setActiveClip] = useState(null);
+  const [vmode, setVmode] = useState(true); // 9:16 WYSIWYG preview by default
+  const [reframe, setReframe] = useState(null);
   const playerRef = useRef(null);
+
+  // Caption lines for the live preview (same grouping the export uses).
+  const captionLines = useMemo(() => {
+    if (!transcript || !edl) return [];
+    return groupLines(projectWords(edl, transcript.words));
+  }, [transcript, edl]);
+
+  // Kick off (or load) the face-track trajectory for the vertical preview.
+  useEffect(() => {
+    let cancelled = false;
+    setReframe(null);
+    fetch(`/api/videos/${videoId}/reframe`, { method: "POST" });
+    (function poll() {
+      fetch(`/api/videos/${videoId}/reframe`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (cancelled) return;
+          if (d.ready) setReframe(d);
+          else setTimeout(poll, 2500);
+        })
+        .catch(() => !cancelled && setTimeout(poll, 2500));
+    })();
+    return () => { cancelled = true; };
+  }, [videoId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,12 +165,28 @@ function EditorInner({ videoId, duration }) {
     <div className="editor">
       <div className="workspace">
         <section className="stage">
-          <div className="preview-pane">
+          <div className="preview-head">
+            <div className="seg-toggle">
+              <button className={vmode ? "on" : ""} onClick={() => setVmode(true)}>9:16 short</button>
+              <button className={!vmode ? "on" : ""} onClick={() => setVmode(false)}>Source</button>
+            </div>
+            {vmode && (
+              <span className="preview-note mono">
+                {reframe
+                  ? reframe.tracked ? "live preview · face-tracked" : "live preview · center crop"
+                  : "analyzing framing…"}
+              </span>
+            )}
+          </div>
+          <div className={"preview-pane" + (vmode ? " is-vertical" : "")}>
             <PreviewPlayer
               ref={playerRef}
               videoId={videoId}
               edl={edl}
               onVirtualTime={setActiveVirtual}
+              vertical={vmode}
+              reframe={reframe}
+              captionLines={captionLines}
             />
           </div>
 

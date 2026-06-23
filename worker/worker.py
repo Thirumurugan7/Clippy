@@ -25,6 +25,7 @@ from worker.steps.export_edit import run_export_edit
 from worker.steps.waveform import run_waveform
 from worker.steps.highlights import run_highlights_job
 from worker.steps.vertical import run_vertical_export
+from worker.steps.reframe import run_reframe
 
 POLL_INTERVAL_SECONDS = 1.0
 
@@ -35,6 +36,7 @@ HANDLERS = {
     "transcribe": lambda job: run_transcribe(job["video_id"]),
     "waveform": lambda job: run_waveform(job["video_id"]),
     "highlights": lambda job: run_highlights_job(job["video_id"]),
+    "reframe": lambda job: run_reframe(job["video_id"]),
     "export_edit": run_export_edit,
     "export_vertical": run_vertical_export,
 }

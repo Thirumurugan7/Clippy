@@ -358,6 +358,28 @@ def export_edit(video_id: str) -> dict:
     return {"job_id": job_id}
 
 
+@app.post("/api/videos/{video_id}/reframe")
+def generate_reframe(video_id: str) -> dict:
+    """Enqueue face-track analysis (for the live vertical preview + export)."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    path = config.EXPORTS_DIR / video_id / "reframe.json"
+    if path.exists():
+        return {"job_id": None, "ready": True}
+    job_id = db.create_job(video_id, job_type="reframe")
+    return {"job_id": job_id, "ready": False}
+
+
+@app.get("/api/videos/{video_id}/reframe")
+def get_reframe(video_id: str) -> dict:
+    path = config.EXPORTS_DIR / video_id / "reframe.json"
+    if not path.exists():
+        return {"ready": False}
+    data = json.loads(path.read_text())
+    data["ready"] = True
+    return data
+
+
 @app.post("/api/videos/{video_id}/export_vertical")
 def export_vertical(video_id: str) -> dict:
     """Enqueue a 9:16 vertical export: face-tracked reframe + burned captions."""

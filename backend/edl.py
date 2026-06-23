@@ -29,6 +29,35 @@ def ordered_intervals(segments: list[dict]) -> list[tuple[float, float]]:
     return [(float(s["sourceStart"]), float(s["sourceEnd"])) for s in segments]
 
 
+def virtual_to_source(segments: list[dict], vt: float) -> float:
+    """Map a virtual (edited-timeline) time to the original source time."""
+    acc = 0.0
+    for s in segments:
+        a = float(s["sourceStart"])
+        b = float(s["sourceEnd"])
+        d = b - a
+        if vt < acc + d:
+            return a + (vt - acc)
+        acc += d
+    return float(segments[-1]["sourceEnd"]) if segments else 0.0
+
+
+def cx_at(centers: list[dict], s: float) -> float:
+    """Linear-interpolate the normalized face centre at source time s (0.5 = middle)."""
+    prev = None
+    for c in centers:
+        if c.get("cx") is None:
+            continue
+        if c["t"] <= s:
+            prev = c
+        else:
+            if prev is None:
+                return c["cx"]
+            span = c["t"] - prev["t"] or 1.0
+            return prev["cx"] + ((s - prev["t"]) / span) * (c["cx"] - prev["cx"])
+    return prev["cx"] if prev else 0.5
+
+
 def project_words(segments: list[dict], words: list[dict], min_keep_ratio: float = 0.5) -> list[dict]:
     """Map transcript words onto the EDITED (virtual) timeline, in EDL order.
 

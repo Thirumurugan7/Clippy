@@ -111,11 +111,27 @@ button:disabled { opacity: .45; cursor: default; }
   flex: 1; min-width: 0; display: flex; flex-direction: column;
   padding: 16px; gap: 12px; overflow-y: auto;
 }
+.preview-head { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.seg-toggle { display: inline-flex; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.seg-toggle button { background: none; border: none; color: var(--muted); padding: 5px 12px; font-size: 12px; border-radius: 7px; }
+.seg-toggle button.on { background: var(--bg-3); color: var(--text); box-shadow: 0 0 0 1px var(--line-2); }
+.preview-note { color: var(--faint); }
+
 .preview-pane {
   background: #000; border: 1px solid var(--line); border-radius: var(--r);
   overflow: hidden; flex-shrink: 0; box-shadow: 0 10px 40px -20px #000;
 }
+.preview-pane.is-vertical { background: var(--bg-0); display: grid; place-items: center; padding: 10px 0; }
 .preview-video { width: 100%; display: block; max-height: 42vh; background: #000; }
+
+.player-wrap.vert { position: relative; }
+.src-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.vert-stage { position: relative; cursor: pointer; }
+.vert-canvas { display: block; height: 46vh; max-height: 540px; aspect-ratio: 9 / 16; border-radius: 10px; background: #000; }
+.play-overlay {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  font-size: 44px; color: rgba(255,255,255,.9); text-shadow: 0 2px 12px #000; pointer-events: none;
+}
 
 /* ---------- toolbar ---------- */
 .toolbar {
