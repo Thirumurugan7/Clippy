@@ -136,25 +136,22 @@ class CaptionRenderer:
 
     def _draw_word(self, img, d, x, y, txt, active):
         s = self.s
-        # glow halo
+        ow = int(s["outline_width"])
+        oc = _rgba(s["outline_color"])[:3]
+        stroke = {"stroke_width": ow, "stroke_fill": oc} if ow > 0 else {}
+        # soft glow halo behind the active word
         glow = _rgba(s["glow"])
         if glow and active:
             for ox, oy in ((-4, 0), (4, 0), (0, -4), (0, 4), (-3, -3), (3, 3), (-3, 3), (3, -3)):
                 d.text((x + ox, y + oy), txt, font=self.font, fill=glow[:3] + (140,))
-        # outline
-        ow = int(s["outline_width"])
-        if ow > 0:
-            oc = _rgba(s["outline_color"])[:3]
-            for ox in range(-ow, ow + 1, max(1, ow)):
-                for oy in range(-ow, ow + 1, max(1, ow)):
-                    if ox or oy:
-                        d.text((x + ox, y + oy), txt, font=self.font, fill=oc)
-        # fill
         if active and s["gradient"]:
+            # solid outline base, then a vertical-gradient fill over the glyph
+            if ow > 0:
+                d.text((x, y), txt, font=self.font, fill=oc, **stroke)
             self._gradient_word(img, x, y, txt, s["gradient"])
         else:
-            fill = _rgba(s["primary"]) if active else _rgba(s["upcoming"])
-            d.text((x, y), txt, font=self.font, fill=fill[:3])
+            fill = (_rgba(s["primary"]) if active else _rgba(s["upcoming"]))[:3]
+            d.text((x, y), txt, font=self.font, fill=fill, **stroke)
 
     def _gradient_word(self, img, x, y, txt, grad):
         bb = self.font.getbbox(txt)
