@@ -1,10 +1,9 @@
-"""Export an edited video: delete the time spans of selected words and
-concatenate the kept segments, re-encoding for frame accuracy.
+"""Export an edited video by concatenating the saved EDL's segments.
 
-Real cuts on the real timeline. The word time spans come from the stored
-faster-whisper word-level timestamps. ffmpeg `trim`/`atrim` + `concat` produce a
-single output in one pass; re-encoding (not stream copy) means cuts land on the
-exact requested time, not the nearest keyframe.
+Real cuts on the real timeline. The EDL is an ordered list of source-time
+segments; ffmpeg `trim`/`atrim` + `concat` render them in one pass, in list
+order (so reorder/trim/split all flow through here). Re-encoding (not stream
+copy) means cuts land on the exact requested time, not the nearest keyframe.
 """
 from __future__ import annotations
 
@@ -15,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from backend import db, config
+from backend.edl import ordered_intervals
 
 
 def _bin(name: str) -> str:
@@ -31,39 +31,6 @@ def _probe_duration(path: str) -> float:
         capture_output=True, text=True,
     )
     return float(out.stdout.strip())
-
-
-def compute_kept_intervals(
-    deleted_spans: list[tuple[float, float]],
-    total_duration: float,
-    merge_gap: float = 0.02,
-) -> list[tuple[float, float]]:
-    """Given spans to delete, return the complementary spans to keep within
-    [0, total_duration]. Deleted spans are merged when they touch/overlap; kept
-    intervals shorter than merge_gap are dropped to avoid 1-frame fragments.
-    """
-    if not deleted_spans:
-        return [(0.0, total_duration)]
-
-    spans = sorted((max(0.0, s), min(total_duration, e)) for s, e in deleted_spans)
-    merged: list[list[float]] = []
-    for s, e in spans:
-        if e <= s:
-            continue
-        if merged and s <= merged[-1][1] + merge_gap:
-            merged[-1][1] = max(merged[-1][1], e)
-        else:
-            merged.append([s, e])
-
-    kept: list[tuple[float, float]] = []
-    cursor = 0.0
-    for s, e in merged:
-        if s - cursor > merge_gap:
-            kept.append((cursor, s))
-        cursor = max(cursor, e)
-    if total_duration - cursor > merge_gap:
-        kept.append((cursor, total_duration))
-    return kept
 
 
 def _build_filtergraph(kept: list[tuple[float, float]], has_audio: bool) -> str:
@@ -86,29 +53,28 @@ def _build_filtergraph(kept: list[tuple[float, float]], has_audio: bool) -> str:
 
 
 def run_export_edit(job) -> dict:
+    """Render the saved EDL (ordered segments) to a real edited MP4.
+
+    The EDL's segments are concatenated in list order, so trim/split/ripple-
+    delete and reorder all flow through the same path.
+    """
     video_id = job["video_id"]
-    params = json.loads(job["params_json"] or "{}")
-    delete_indices = set(params.get("delete_word_indices", []))
 
     video = db.get_video(video_id)
     if video is None:
         raise RuntimeError(f"video {video_id} not found")
-    tr = db.get_transcript(video_id)
-    if tr is None:
-        raise RuntimeError("transcript not available; cannot map words to time")
 
-    words = json.loads(tr["words_json"])
     total_duration = video["duration_seconds"] or _probe_duration(video["stored_path"])
     has_audio = bool(video["audio_codec"])
 
-    deleted_spans = [
-        (words[i]["start"], words[i]["end"])
-        for i in delete_indices
-        if 0 <= i < len(words)
-    ]
-    kept = compute_kept_intervals(deleted_spans, total_duration)
+    edit = db.get_edit(video_id)
+    if edit is not None:
+        segments = json.loads(edit["edl_json"])
+        kept = ordered_intervals(segments)
+    else:
+        kept = [(0.0, total_duration)]
     if not kept:
-        raise RuntimeError("Edit removes the entire video; nothing left to export.")
+        raise RuntimeError("EDL is empty; nothing to export.")
 
     out_dir = config.EXPORTS_DIR / video_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -139,12 +105,9 @@ def run_export_edit(job) -> dict:
         )
 
     out_duration = _probe_duration(str(out_path))
-    removed = sum(e - s for s, e in deleted_spans) if deleted_spans else 0.0
     return {
         "output_path": str(out_path),
-        "num_words_deleted": len(delete_indices),
-        "num_kept_segments": len(kept),
+        "num_segments": len(kept),
         "original_duration": round(total_duration, 3),
         "output_duration": round(out_duration, 3),
-        "removed_seconds_estimate": round(removed, 3),
     }

@@ -9,3 +9,5 @@ node_modules/
 frontend/dist/
 .DS_Store
 frontend/node_modules/
+.superpowers/
+data/exports/

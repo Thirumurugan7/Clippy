@@ -23,6 +23,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from . import config, db
+from .edl import validate_edl
 from .fillers import detect_fillers
 
 app = FastAPI(title="ClipForge", version="0.1.0")
@@ -126,6 +127,7 @@ async def upload(file: UploadFile = File(...)) -> dict:
     # creation order, one at a time.
     probe_job_id = db.create_job(video_id, job_type="probe")
     transcribe_job_id = db.create_job(video_id, job_type="transcribe")
+    db.create_job(video_id, job_type="waveform")
 
     return {
         "video_id": video_id,
@@ -259,6 +261,15 @@ def get_video_file(video_id: str, request: Request):
     return _stream_with_range(Path(video["stored_path"]), request)
 
 
+@app.get("/api/videos/{video_id}/waveform")
+def get_waveform(video_id: str) -> dict:
+    """Return precomputed audio peaks for the timeline (404 until the job runs)."""
+    path = config.EXPORTS_DIR / video_id / "waveform.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="waveform not ready")
+    return json.loads(path.read_text())
+
+
 @app.get("/api/videos/{video_id}/fillers")
 def get_fillers(video_id: str) -> dict:
     """Return indices of detected filler words for the user to review."""
@@ -272,20 +283,51 @@ def get_fillers(video_id: str) -> dict:
     return {"indices": indices, "count": len(indices)}
 
 
-class ExportRequest(BaseModel):
-    delete_word_indices: list[int] = []
+class EdlBody(BaseModel):
+    segments: list[dict]
+
+
+@app.get("/api/videos/{video_id}/edit")
+def get_edit(video_id: str) -> dict:
+    """Return the saved EDL, or a default single full-length segment."""
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    row = db.get_edit(video_id)
+    if row is not None:
+        return {"segments": json.loads(row["edl_json"])}
+    dur = video["duration_seconds"] or 0.0
+    return {"segments": [{"id": uuid.uuid4().hex, "sourceStart": 0.0, "sourceEnd": dur}]}
+
+
+@app.put("/api/videos/{video_id}/edit")
+def put_edit(video_id: str, body: EdlBody) -> dict:
+    """Persist the EDL (autosaved by the editor). Validated against duration."""
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    dur = video["duration_seconds"] or 0.0
+    try:
+        validate_edl(body.segments, dur)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.save_edit(video_id, json.dumps(body.segments))
+    return {"ok": True}
 
 
 @app.post("/api/videos/{video_id}/export")
-def export_edit(video_id: str, req: ExportRequest) -> dict:
-    """Enqueue an export job that cuts the deleted words' time spans."""
+def export_edit(video_id: str) -> dict:
+    """Enqueue an export job that renders the saved EDL for this video.
+
+    The editor PUTs the EDL (autosave) before calling this, so no body is
+    needed; the worker reads the saved EDL.
+    """
     if db.get_video(video_id) is None:
         raise HTTPException(status_code=404, detail="video not found")
     if db.get_transcript(video_id) is None:
         raise HTTPException(status_code=400, detail="transcript not ready")
-    params = json.dumps({"delete_word_indices": sorted(set(req.delete_word_indices))})
-    job_id = db.create_job(video_id, job_type="export_edit", params_json=params)
-    return {"job_id": job_id, "deleted": len(set(req.delete_word_indices))}
+    job_id = db.create_job(video_id, job_type="export_edit")
+    return {"job_id": job_id}
 
 
 @app.get("/api/exports/{job_id}/file")

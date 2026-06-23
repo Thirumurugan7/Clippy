@@ -12,13 +12,21 @@ and this file grows with them.
 - **M1**: faster-whisper transcription with word-level timestamps; transcript
   shown in the UI synced to the video player (active word highlights during
   playback; click a word to seek).
-- **M2**: transcript-based editing. In the UI, toggle **Edit mode** and click
-  words to mark them for deletion; **Detect filler words** one-click marks
-  fillers (um, uh, like, "you know"…) for review; **Export** cuts those words'
-  exact time spans and concatenates the kept segments with ffmpeg (re-encoded,
-  frame-accurate), producing a real edited MP4 that plays back in the UI.
-  Filler list is overridable via `CLIPFORGE_FILLER_WORDS` (comma-separated).
-  Exports are written to `data/exports/<video_id>/<job_id>.mp4`.
+- **M2**: Descript/Veed-style non-destructive editor. All edits are driven by a
+  single **Edit Decision List** (ordered `{sourceStart,sourceEnd}` segments); the
+  transcript, timeline, and live preview are pure projections of it, so they
+  never desync (see `docs/superpowers/specs/2026-06-23-clipforge-editor-design.md`).
+  - **Transcript**: click a word to seek; drag-select or double-click + Delete to
+    cut; **Detect filler words** marks fillers (um/uh/like/"you know"…) for review.
+  - **Timeline**: clip cards with waveform, drag trim handles, **Split at
+    playhead**, ✕ ripple-delete, drag-to-reorder. Molten-amber playhead.
+  - **Live preview** reflects edits immediately (non-destructive playback across
+    segments); **Undo/Redo**; edits autosave (survive reload via `?v=<id>` URL).
+  - **Export** bakes the saved EDL with ffmpeg (re-encoded, frame-accurate) in
+    segment order, to `data/exports/<video_id>/<job_id>.mp4`.
+
+  Filler list overridable via `CLIPFORGE_FILLER_WORDS`. Tests: `cd frontend &&
+  npm test` (vitest, EDL logic) and `./.venv/bin/python -m pytest backend/tests`.
 
 ### Transcription performance (Apple Silicon CPU)
 
