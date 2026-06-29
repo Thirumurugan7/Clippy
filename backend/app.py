@@ -28,6 +28,7 @@ from .edl import validate_edl, project_words
 from .fillers import detect_fillers
 from .presets import ASPECTS, CAPTION_PRESETS
 from .subtitles import group_cues, cues_to_srt, cues_to_vtt
+from .subtitle_edit import replace_cue_words
 from .translate import translate_cues, LANGUAGES
 
 COOKIE = "clippy_session"
@@ -41,6 +42,9 @@ DEFAULT_SETTINGS = {
     "crop_cy": 0.5,
     "enhance_audio": False,
     "background": {"mode": "none", "color": "#10121a"},
+    "progress_bar": {"enabled": False, "color": "#8b6cf6", "position": "bottom"},
+    "transition": {"fade": False},
+    "text_overlays": [],
     "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
 }
 
@@ -323,6 +327,29 @@ def subtitle_languages() -> dict:
     return {"languages": [{"code": c, "name": n} for c, n in LANGUAGES.items()]}
 
 
+class CueEdit(BaseModel):
+    start: float
+    end: float
+    text: str
+
+
+@app.put("/api/videos/{video_id}/transcript/cue")
+def edit_transcript_cue(video_id: str, body: CueEdit) -> dict:
+    """Replace the words under one subtitle cue with edited text (retimed evenly).
+
+    Fixes flow to burned-in captions and SRT/VTT alike (both read the words).
+    """
+    tr = db.get_transcript(video_id)
+    if tr is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    if body.end <= body.start:
+        raise HTTPException(status_code=400, detail="end must be after start")
+    words = json.loads(tr["words_json"])
+    updated = replace_cue_words(words, body.start, body.end, body.text)
+    db.update_transcript_words(video_id, json.dumps(updated))
+    return {"ok": True, "word_count": len(updated)}
+
+
 @app.get("/api/videos/{video_id}/subtitles.srt")
 def get_subtitles_srt(video_id: str, lang: str = ""):
     if db.get_video(video_id) is None:
@@ -600,6 +627,9 @@ class SettingsBody(BaseModel):
     crop_cy: float = 0.5
     enhance_audio: bool = False
     background: dict = {"mode": "none", "color": "#10121a"}
+    progress_bar: dict = {"enabled": False, "color": "#8b6cf6", "position": "bottom"}
+    transition: dict = {"fade": False}
+    text_overlays: list = []
     caption: dict
 
 
@@ -625,6 +655,35 @@ def put_settings(video_id: str, body: SettingsBody) -> dict:
         raise HTTPException(status_code=400, detail="unknown caption preset")
     db.save_settings(video_id, json.dumps(body.model_dump()))
     return {"ok": True}
+
+
+_BG_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+
+
+@app.post("/api/videos/{video_id}/background_image")
+async def upload_background_image(video_id: str, file: UploadFile = File(...)) -> dict:
+    """Store a custom background photo for the 'image' background mode."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _BG_IMAGE_EXTS:
+        ext = ".png"
+    out_dir = config.EXPORTS_DIR / video_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for p in out_dir.glob("bg_source.*"):
+        p.unlink(missing_ok=True)
+    path = out_dir / f"bg_source{ext}"
+    path.write_bytes(await file.read())
+    return {"image": str(path)}
+
+
+@app.get("/api/videos/{video_id}/background_image/file")
+def get_background_image(video_id: str):
+    out_dir = config.EXPORTS_DIR / video_id
+    for p in sorted(out_dir.glob("bg_source.*")):
+        media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}.get(p.suffix.lower(), "image/png")
+        return Response(content=p.read_bytes(), media_type=media)
+    raise HTTPException(status_code=404, detail="no background image")
 
 
 @app.post("/api/videos/{video_id}/reframe")

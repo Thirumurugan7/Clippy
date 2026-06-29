@@ -87,8 +87,8 @@ Both Veed and Descript capture in-browser; Clippy was upload-only.
 - Note: needs a live camera/screen test (this session has no device/browser);
       the MediaRecorder logic is standard and compiles clean.
 
-### 7. Background removal / green screen ✅
-Local via mediapipe selfie-segmentation; composite over a colour or blur.
+### 7. Background removal / green screen ✅ (incl. custom image / green-screen)
+Local via mediapipe selfie-segmentation; composite over a colour, blur, or photo.
 - [x] Downloaded `selfie_segmenter.tflite`; `SEGMENT_MODEL_PATH` in config.
 - [x] `backend/segment.py` `BackgroundSegmenter` (Tasks API ImageSegmenter):
       per-frame person mask, feathered, composited over blurred frame or a flat
@@ -100,6 +100,12 @@ Local via mediapipe selfie-segmentation; composite over a colour or blur.
 - [x] `BackgroundPanel` (Keep/Blur/Color + colour picker) in the Style tool group.
 - [x] Tests: segmenter shape test + full 1080×1920 export with blur. 40 backend
       tests green. **Verified live in the browser** (panel, mode switch, picker).
+- [x] **Image / green-screen replace** (2026-06-29): `BackgroundSegmenter` gained
+      an `image` mode — composites the speaker over a custom photo (cover-fit,
+      cached). `POST/GET /api/videos/{id}/background_image` store + serve it;
+      BackgroundPanel gained an **Image** card + upload + thumbnail. Test +
+      **browser E2E**: uploaded a gradient photo → export shows the speaker over
+      it (original background gone). 63 backend tests green.
 
 ### 8. Eye-contact correction ⬜
 Both competitors have it. Heavier ML lift; evaluate local models.

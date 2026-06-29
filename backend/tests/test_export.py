@@ -58,6 +58,23 @@ def test_background_segmenter_shapes():
         assert out.shape == frame.shape and out.dtype == np.uint8
 
 
+def test_background_image_mode_composites_over_photo():
+    import tempfile, cv2, numpy as np
+    from backend.segment import BackgroundSegmenter
+    bg = np.zeros((400, 300, 3), np.uint8)
+    bg[:, :, 1] = 255  # solid green (BGR)
+    p = tempfile.mktemp(suffix=".png")
+    cv2.imwrite(p, bg)
+    frame = np.full((640, 360, 3), 50, np.uint8)  # flat grey -> low person prob
+    seg = BackgroundSegmenter(mode="image", image_path=p)
+    out = seg.apply(frame)
+    seg.close()
+    assert out.shape == frame.shape
+    greenish = (out[:, :, 1].astype(int) > out[:, :, 0].astype(int) + 40) & \
+               (out[:, :, 1].astype(int) > out[:, :, 2].astype(int) + 40)
+    assert greenish.sum() > 1000  # the photo shows through the (mostly non-person) frame
+
+
 def test_export_vertical_with_background_blur():
     vid = _short_video_id()
     assert vid
@@ -71,6 +88,26 @@ def test_export_vertical_with_background_blur():
     res = run_vertical_export({"id": "bg01", "video_id": vid, "params_json": "{}"})
     assert res["width"] == 1080 and res["height"] == 1920
     assert res["duration"] > 0
+
+
+def test_hex_to_bgr():
+    from worker.steps.vertical import _hex_to_bgr
+    assert _hex_to_bgr("#8b6cf6") == (0xf6, 0x6c, 0x8b)  # BGR order
+    assert _hex_to_bgr("ff0000") == (0x00, 0x00, 0xff)
+
+
+def test_export_vertical_with_progress_bar():
+    vid = _short_video_id()
+    assert vid
+    dur = db.get_video(vid)["duration_seconds"]
+    db.save_edit(vid, json.dumps([{"id": "a", "sourceStart": 0.0, "sourceEnd": min(4.0, dur)}]))
+    db.save_settings(vid, json.dumps({
+        "aspect": "9:16", "framing": "auto", "crop_cx": 0.5,
+        "progress_bar": {"enabled": True, "color": "#8b6cf6", "position": "bottom"},
+        "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
+    }))
+    res = run_vertical_export({"id": "pb01", "video_id": vid, "params_json": "{}"})
+    assert res["width"] == 1080 and res["height"] == 1920 and res["duration"] > 0
 
 
 def test_export_with_audio_enhancement():

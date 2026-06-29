@@ -314,6 +314,15 @@ def save_transcript(
         )
 
 
+def update_transcript_words(video_id: str, words_json: str) -> None:
+    """Overwrite just the word list (subtitle editor); segments untouched."""
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE transcripts SET words_json=? WHERE video_id=?",
+            (words_json, video_id),
+        )
+
+
 def get_transcript(video_id: str) -> Optional[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(

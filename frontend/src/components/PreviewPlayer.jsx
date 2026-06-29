@@ -1,6 +1,6 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle, useState } from "react";
 import { virtualToSource, sourceToVirtual } from "../edl.js";
-import { drawCaptions, cxAt } from "../captionLayout.js";
+import { drawCaptions, drawTextOverlays, cxAt } from "../captionLayout.js";
 import { resolveCaptionStyle } from "../presets.js";
 import { computeCrop, targetDims } from "../crop.js";
 
@@ -109,6 +109,37 @@ export const PreviewPlayer = forwardRef(function PreviewPlayer(
               const base = resolveCaptionStyle(st.caption);
               const f = W / tw;
               drawCaptions(ctx, captionLines, vt, W, H, { ...base, fontsize: base.fontsize * f, outline_width: base.outline_width * f });
+            }
+          }
+          // static text overlays (matches the export)
+          drawTextOverlays(ctx, st.text_overlays, W, H);
+          // progress bar overlay (matches the export)
+          const pb = st.progress_bar;
+          if (pb && pb.enabled) {
+            const vt = sourceToVirtual(edlRef.current, v.currentTime);
+            const dur = edlRef.current.reduce((a, s) => a + (s.sourceEnd - s.sourceStart), 0);
+            if (vt != null && dur > 0) {
+              const frac = Math.min(1, Math.max(0, vt / dur));
+              const bh = Math.max(3, Math.round(H * 0.011));
+              const by = pb.position === "top" ? 0 : H - bh;
+              ctx.fillStyle = pb.color || "#8b6cf6";
+              ctx.fillRect(0, by, W * frac, bh);
+            }
+          }
+          // fade in/out transition (matches the export)
+          if (st.transition && st.transition.fade) {
+            const vt = sourceToVirtual(edlRef.current, v.currentTime);
+            const dur = edlRef.current.reduce((a, s) => a + (s.sourceEnd - s.sourceStart), 0);
+            if (vt != null && dur > 0.9) {
+              const fd = 0.4;
+              let a = 0;
+              if (vt < fd) a = 1 - vt / fd;
+              else if (vt > dur - fd) a = 1 - (dur - vt) / fd;
+              a = Math.max(0, Math.min(1, a));
+              if (a > 0.001) {
+                ctx.fillStyle = `rgba(0,0,0,${a})`;
+                ctx.fillRect(0, 0, W, H);
+              }
             }
           }
         }

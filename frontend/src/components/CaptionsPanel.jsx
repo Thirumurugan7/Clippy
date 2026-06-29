@@ -76,6 +76,18 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
         </select>
       </div>
 
+      <button
+        className={"toggle-row" + (cap.animate ? " on" : "")}
+        onClick={() => setSettings({ caption: { animate: !cap.animate } })}
+        aria-pressed={!!cap.animate}
+      >
+        <span className="toggle-text">
+          <span className="toggle-title">Animate words</span>
+          <span className="toggle-desc">Each word pops as it's spoken</span>
+        </span>
+        <span className={"switch" + (cap.animate ? " on" : "")} aria-hidden><span className="switch-knob" /></span>
+      </button>
+
       {videoId && (
         <div className="cap-downloads">
           <span className="cap-dl-label">Download caption file</span>

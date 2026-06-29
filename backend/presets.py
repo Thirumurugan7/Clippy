@@ -74,4 +74,5 @@ def resolve_caption_style(caption: dict | None) -> dict:
         style["primary"] = caption["color"]
     if caption.get("position"):
         style["position"] = caption["position"]
+    style["animate"] = bool(caption.get("animate", False))
     return style

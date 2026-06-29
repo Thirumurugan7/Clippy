@@ -50,5 +50,6 @@ export function resolveCaptionStyle(caption) {
   if (caption.fontsize) style.fontsize = caption.fontsize;
   if (caption.color) style.primary = caption.color;
   if (caption.position) style.position = caption.position;
+  style.animate = !!caption.animate;
   return style;
 }

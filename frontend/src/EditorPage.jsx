@@ -14,6 +14,8 @@ import { CropPanel } from "./components/CropPanel.jsx";
 import { AiEditPanel } from "./components/AiEditPanel.jsx";
 import { AudioPanel } from "./components/AudioPanel.jsx";
 import { BackgroundPanel } from "./components/BackgroundPanel.jsx";
+import { SubtitleEditor } from "./components/SubtitleEditor.jsx";
+import { OverlaysPanel } from "./components/OverlaysPanel.jsx";
 
 export function EditorPage({ videoId }) {
   const [duration, setDuration] = useState(0);
@@ -50,8 +52,10 @@ const TOOL_GROUPS = [
     label: "Style",
     tools: [
       { id: "captions", label: "Captions", icon: "💬" },
+      { id: "subtitles", label: "Subtitles", icon: "✏️" },
       { id: "crop", label: "Reframe", icon: "⬚" },
       { id: "bg", label: "Background", icon: "🎞" },
+      { id: "overlays", label: "Overlays", icon: "▭" },
     ],
   },
   {
@@ -108,6 +112,12 @@ function EditorInner({ videoId, duration }) {
     })();
     return () => { c = true; };
   }, [videoId]);
+
+  // Re-fetch the transcript after a subtitle edit so captions/preview update.
+  const reloadTranscript = () =>
+    fetch(`/api/videos/${videoId}/transcript`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && d.ready && setTranscript(d));
 
   useEffect(() => {
     let c = false;
@@ -180,8 +190,10 @@ function EditorInner({ videoId, duration }) {
           {tab === "ai" && <AiEditPanel videoId={videoId} onApply={onApplyAiEdit} />}
           {tab === "highlights" && <HighlightsRail videoId={videoId} onUseClip={onUseClip} onPreviewClip={onPreviewClip} activeClip={activeClip} />}
           {tab === "captions" && <CaptionsPanel settings={settings} setSettings={setSettings} videoId={videoId} />}
+          {tab === "subtitles" && <SubtitleEditor transcript={transcript} videoId={videoId} onReload={reloadTranscript} />}
           {tab === "crop" && <CropPanel settings={settings} setSettings={setSettings} />}
-          {tab === "bg" && <BackgroundPanel settings={settings} setSettings={setSettings} />}
+          {tab === "bg" && <BackgroundPanel settings={settings} setSettings={setSettings} videoId={videoId} />}
+          {tab === "overlays" && <OverlaysPanel settings={settings} setSettings={setSettings} />}
           {tab === "audio" && <AudioPanel settings={settings} setSettings={setSettings} />}
         </Sidebar>
 

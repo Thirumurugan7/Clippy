@@ -30,6 +30,19 @@ def _rgba(h):
     return (r, g, b, a)
 
 
+# Word-pop animation (mirrors frontend captionLayout.popScale): the active word
+# scales up for the first POP_DUR of its window, easing back to 1.0.
+POP_DUR = 0.18
+POP_AMOUNT = 0.3
+
+
+def _pop_scale(t, w):
+    e = t - w["virtual_start"]
+    if e < 0 or e > POP_DUR:
+        return 1.0
+    return 1.0 + POP_AMOUNT * (1 - e / POP_DUR)
+
+
 def _group_lines(words, max_words, max_gap):
     lines, cur = [], []
     for w in words:
@@ -129,10 +142,33 @@ class CaptionRenderer:
             for w, tw in zip(r, widths):
                 active = w["virtual_start"] <= t <= w["virtual_end"]
                 txt = self._txt(w)
-                self._draw_word(img, d, x, y, txt, active)
+                pop = _pop_scale(t, w) if (active and self.s.get("animate")) else 1.0
+                if pop > 1.001:
+                    self._draw_word_pop(img, x, y, tw, txt, pop)
+                else:
+                    self._draw_word(img, d, x, y, txt, active)
                 x += tw + self.space
             y += line_h
         return np.asarray(img.convert("RGB"))[:, :, ::-1].copy()
+
+    def _draw_word_pop(self, img, x, y, tw, txt, scale):
+        """Render the active word to a tile, scale it, and composite centred on
+        its slot — the pop frames. Outline + primary fill (parity with preview)."""
+        s = self.s
+        ow = int(s["outline_width"])
+        oc = _rgba(s["outline_color"])[:3]
+        fill = _rgba(s["primary"])[:3]
+        bb = self.font.getbbox(txt)
+        gw, gh = bb[2] - bb[0], bb[3] - bb[1]
+        pad = ow + 6
+        tile = Image.new("RGBA", (gw + pad * 2, gh + pad * 2), (0, 0, 0, 0))
+        stroke = {"stroke_width": ow, "stroke_fill": oc} if ow > 0 else {}
+        ImageDraw.Draw(tile).text((pad - bb[0], pad - bb[1]), txt, font=self.font, fill=fill, **stroke)
+        nw, nh = max(1, int(tile.width * scale)), max(1, int(tile.height * scale))
+        tile = tile.resize((nw, nh), Image.LANCZOS)
+        cx = x + tw / 2
+        cy = y + (bb[1] + bb[3]) / 2  # vertical centre of the glyph at draw y
+        img.alpha_composite(tile, (int(cx - nw / 2), int(cy - nh / 2)))
 
     def _draw_word(self, img, d, x, y, txt, active):
         s = self.s

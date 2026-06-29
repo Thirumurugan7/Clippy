@@ -22,11 +22,17 @@ def _hex_to_bgr(h: str) -> tuple[int, int, int]:
 
 
 class BackgroundSegmenter:
-    """mode: "blur" (defocus background) or "color" (replace with a flat colour)."""
+    """mode: "blur" (defocus), "color" (flat colour), or "image" (a custom photo)."""
 
-    def __init__(self, mode: str = "blur", color: str = "#10121a"):
+    def __init__(self, mode: str = "blur", color: str = "#10121a", image_path=None):
         self.mode = mode
         self.color = _hex_to_bgr(color)
+        self._bg_src = None
+        self._bg_cache = None
+        if mode == "image" and image_path:
+            img = cv2.imread(str(image_path))
+            if img is not None:
+                self._bg_src = img
         opts = vision.ImageSegmenterOptions(
             base_options=BaseOptions(model_asset_path=str(config.SEGMENT_MODEL_PATH)),
             running_mode=vision.RunningMode.IMAGE,
@@ -46,9 +52,25 @@ class BackgroundSegmenter:
         mask = cv2.GaussianBlur(mask, (0, 0), sigmaX=2.0)
         return np.clip(mask, 0.0, 1.0)[:, :, None]
 
+    def _bg_image(self, frame_bgr) -> np.ndarray:
+        """The background photo, cover-fit (scale + centre-crop) to the frame."""
+        h, w = frame_bgr.shape[:2]
+        if self._bg_cache is not None and self._bg_cache.shape[:2] == (h, w):
+            return self._bg_cache
+        src = self._bg_src
+        sh, sw = src.shape[:2]
+        scale = max(w / sw, h / sh)
+        nw, nh = max(w, int(sw * scale)), max(h, int(sh * scale))
+        resized = cv2.resize(src, (nw, nh), interpolation=cv2.INTER_AREA)
+        x, y = (nw - w) // 2, (nh - h) // 2
+        self._bg_cache = resized[y:y + h, x:x + w].copy()
+        return self._bg_cache
+
     def apply(self, frame_bgr) -> np.ndarray:
         alpha = self._alpha(frame_bgr)
-        if self.mode == "color":
+        if self.mode == "image" and self._bg_src is not None:
+            bg = self._bg_image(frame_bgr)
+        elif self.mode == "color":
             bg = np.full_like(frame_bgr, self.color, dtype=np.uint8)
         else:  # blur
             k = max(31, (min(frame_bgr.shape[:2]) // 12) | 1)

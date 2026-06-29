@@ -18,11 +18,13 @@ import subprocess
 import warnings
 
 import cv2
+import numpy as np
 
 from backend import db, config
 from backend.edl import ordered_intervals, project_words, virtual_to_source, cx_at
 from backend.crop import compute_crop, target_dims
 from backend.captions import CaptionRenderer
+from backend.overlays import build_overlay_layer
 from backend.presets import resolve_caption_style
 from worker.steps.export_edit import render_segments, _bin, _probe_duration
 from worker.steps.reframe import run_reframe
@@ -31,13 +33,19 @@ warnings.filterwarnings("ignore")
 
 SMOOTH_ALPHA = 0.2  # EMA over the per-frame centre to keep the pan smooth
 
+
+def _hex_to_bgr(h: str) -> tuple[int, int, int]:
+    h = (h or "#8b6cf6").lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return (b, g, r)
+
 DEFAULT_SETTINGS = {
     "aspect": "9:16", "framing": "auto", "crop_cx": 0.5,
     "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
 }
 
 
-def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx, crop_cy, segmenter=None) -> dict:
+def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx, crop_cy, segmenter=None, progress=None, clip_duration=0.0, text_overlays=None, fade=False) -> dict:
     """Crop the edited intermediate to the chosen aspect, following the
     precomputed face trajectory (auto) or a fixed centre (manual), draw captions,
     and mux audio. Same trajectory as the live preview, so export == preview.
@@ -48,17 +56,21 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect,
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     tw, th = target_dims(aspect)
 
-    ff = subprocess.Popen(
-        [_bin("ffmpeg"), "-y",
-         "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{tw}x{th}",
-         "-r", f"{fps}", "-i", "-",
-         "-i", in_path,
-         "-map", "0:v:0", "-map", "1:a:0?", "-shortest",
-         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_path],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-    )
+    cmd = [_bin("ffmpeg"), "-y",
+           "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{tw}x{th}",
+           "-r", f"{fps}", "-i", "-",
+           "-i", in_path,
+           "-map", "0:v:0", "-map", "1:a:0?", "-shortest"]
+    if fade and clip_duration > 0.9:
+        fd = 0.4
+        cmd += ["-vf", f"fade=t=in:st=0:d={fd},fade=t=out:st={clip_duration - fd:.3f}:d={fd}"]
+    cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", out_path]
+    ff = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     assert ff.stdin is not None
+
+    # Static text overlays: render once, blend the precomputed layer each frame.
+    ov_bgr, ov_alpha = build_overlay_layer(text_overlays, tw, th)
 
     cur_cx = crop_cx if framing == "manual" else 0.5
     total = 0
@@ -81,6 +93,15 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect,
             out = segmenter.apply(out)  # blur/replace background behind the person
         if renderer is not None:
             out = renderer.draw(out, vt)
+        if ov_bgr is not None:
+            out = (out.astype(np.float32) * (1 - ov_alpha) + ov_bgr.astype(np.float32) * ov_alpha).astype(np.uint8)
+        if progress and progress.get("enabled") and clip_duration > 0:
+            frac = min(1.0, max(0.0, vt / clip_duration))
+            bw = int(tw * frac)
+            bh = max(4, int(th * 0.011))
+            by = 0 if progress.get("position") == "top" else th - bh
+            if bw > 0:
+                out[by:by + bh, 0:bw] = _hex_to_bgr(progress.get("color", "#8b6cf6"))
         try:
             ff.stdin.write(out.tobytes())
         except BrokenPipeError:
@@ -124,6 +145,10 @@ def render_vertical_clip(video, words, segments, settings, centers, intermediate
     crop_cy = float(settings.get("crop_cy", 0.5))
     enhance_audio = bool(settings.get("enhance_audio"))
     bg = settings.get("background") or {}
+    progress = settings.get("progress_bar") or {}
+    text_overlays = settings.get("text_overlays") or []
+    fade = bool((settings.get("transition") or {}).get("fade"))
+    clip_duration = sum(e - s for s, e in kept)
     style = resolve_caption_style(settings.get("caption"))
     tw, th = target_dims(aspect)
 
@@ -136,14 +161,17 @@ def render_vertical_clip(video, words, segments, settings, centers, intermediate
 
     # Background effect (blur / colour) via selfie segmentation, if enabled.
     segmenter = None
-    if bg.get("mode") in ("blur", "color"):
+    if bg.get("mode") in ("blur", "color", "image"):
         from backend.segment import BackgroundSegmenter
-        segmenter = BackgroundSegmenter(mode=bg["mode"], color=bg.get("color", "#10121a"))
+        segmenter = BackgroundSegmenter(mode=bg["mode"], color=bg.get("color", "#10121a"),
+                                        image_path=bg.get("image"))
 
     # 3. crop (aspect + trajectory/manual) + background + caption + mux
     try:
         _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments,
-                             aspect, framing, crop_cx, crop_cy, segmenter=segmenter)
+                             aspect, framing, crop_cx, crop_cy, segmenter=segmenter,
+                             progress=progress, clip_duration=clip_duration,
+                             text_overlays=text_overlays, fade=fade)
     finally:
         if segmenter is not None:
             segmenter.close()

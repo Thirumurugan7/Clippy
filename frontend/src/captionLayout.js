@@ -23,6 +23,17 @@ export function groupLines(words, maxWords = 4, maxGap = 0.7) {
   }));
 }
 
+// Word-pop: the active word scales up for the first POP_DUR of its window,
+// easing back to 1.0. Shared shape with the backend Pillow renderer so the
+// preview matches the export.
+const POP_DUR = 0.18;
+const POP_AMOUNT = 0.3;
+export function popScale(t, w) {
+  const e = t - w.virtualStart;
+  if (e < 0 || e > POP_DUR) return 1;
+  return 1 + POP_AMOUNT * (1 - e / POP_DUR);
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   if (ctx.roundRect) {
     ctx.beginPath();
@@ -94,6 +105,17 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
       const active = t >= w.virtualStart && t <= w.virtualEnd;
       const s = txt(w);
       ctx.save();
+      // word-pop: scale the active glyph around its centre
+      if (style.animate && active) {
+        const pop = popScale(t, w);
+        if (pop !== 1) {
+          const cx = x + widths[i] / 2;
+          const cy = y + fs / 2;
+          ctx.translate(cx, cy);
+          ctx.scale(pop, pop);
+          ctx.translate(-cx, -cy);
+        }
+      }
       if (style.glow && active) {
         ctx.shadowColor = style.glow;
         ctx.shadowBlur = fs * 0.5;
@@ -117,6 +139,34 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
       x += widths[i] + space;
     });
     y += lineH;
+  }
+}
+
+// Static text overlays (mirror backend/overlays.py). Horizontally centred,
+// top/center/bottom, outlined for legibility. size is a fraction of height.
+export function drawTextOverlays(ctx, overlays, W, H) {
+  if (!overlays || !overlays.length) return;
+  const margin = H * 0.05;
+  for (const ov of overlays) {
+    const text = (ov.text || "").trim();
+    if (!text) continue;
+    const size = Math.max(10, (ov.size || 0.06) * H);
+    ctx.save();
+    ctx.font = `700 ${size}px "DejaVu Sans", Arial, sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.textAlign = "center";
+    const sw = Math.max(2, size / 16);
+    let y;
+    if (ov.position === "bottom") y = H - margin - size;
+    else if (ov.position === "center") y = (H - size) / 2;
+    else y = margin;
+    ctx.lineWidth = sw;
+    ctx.strokeStyle = "#000";
+    ctx.lineJoin = "round";
+    ctx.strokeText(text, W / 2, y);
+    ctx.fillStyle = ov.color || "#ffffff";
+    ctx.fillText(text, W / 2, y);
+    ctx.restore();
   }
 }
 
