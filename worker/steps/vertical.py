@@ -37,7 +37,7 @@ DEFAULT_SETTINGS = {
 }
 
 
-def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx, crop_cy) -> dict:
+def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect, framing, crop_cx, crop_cy, segmenter=None) -> dict:
     """Crop the edited intermediate to the chosen aspect, following the
     precomputed face trajectory (auto) or a fixed centre (manual), draw captions,
     and mux audio. Same trajectory as the live preview, so export == preview.
@@ -77,6 +77,8 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect,
             cy = 0.5
         sx, sy, cw, ch = compute_crop(W, H, aspect, cur_cx, cy)
         out = cv2.resize(frame[sy:sy + ch, sx:sx + cw], (tw, th), interpolation=cv2.INTER_AREA)
+        if segmenter is not None:
+            out = segmenter.apply(out)  # blur/replace background behind the person
         if renderer is not None:
             out = renderer.draw(out, vt)
         try:
@@ -93,8 +95,71 @@ def _reframe_and_caption(in_path, out_path, renderer, centers, segments, aspect,
     return {"frames": total, "width": tw, "height": th}
 
 
+def load_reframe(video_id, out_dir) -> dict:
+    """Face-track trajectory (shared with the live preview); compute if missing.
+
+    Keyed by SOURCE time, so the same trajectory serves the full edit or any
+    sub-range clip (batch export) without recomputation.
+    """
+    reframe_path = out_dir / "reframe.json"
+    if not reframe_path.exists():
+        run_reframe(video_id)
+    return json.loads(reframe_path.read_text())
+
+
+def render_vertical_clip(video, words, segments, settings, centers, intermediate, final) -> dict:
+    """Render one set of EDL segments to a vertical short (reframe + captions).
+
+    Shared by single-clip (run_vertical_export) and batch (run_export_batch)
+    export so both produce identical output for the same inputs.
+    """
+    has_audio = bool(video["audio_codec"])
+    kept = ordered_intervals(segments)
+    if not kept:
+        raise RuntimeError("EDL is empty; nothing to export.")
+
+    aspect = settings.get("aspect", "9:16")
+    framing = settings.get("framing", "auto")
+    crop_cx = float(settings.get("crop_cx", 0.5))
+    crop_cy = float(settings.get("crop_cy", 0.5))
+    enhance_audio = bool(settings.get("enhance_audio"))
+    bg = settings.get("background") or {}
+    style = resolve_caption_style(settings.get("caption"))
+    tw, th = target_dims(aspect)
+
+    # 1. edit -> horizontal intermediate (audio cleanup applied here if enabled)
+    render_segments(video["stored_path"], kept, has_audio, str(intermediate), enhance_audio=enhance_audio)
+
+    # 2. captions on the edited timeline
+    projected = project_words(segments, words)
+    renderer = CaptionRenderer(projected, width=tw, height=th, style=style) if projected else None
+
+    # Background effect (blur / colour) via selfie segmentation, if enabled.
+    segmenter = None
+    if bg.get("mode") in ("blur", "color"):
+        from backend.segment import BackgroundSegmenter
+        segmenter = BackgroundSegmenter(mode=bg["mode"], color=bg.get("color", "#10121a"))
+
+    # 3. crop (aspect + trajectory/manual) + background + caption + mux
+    try:
+        _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments,
+                             aspect, framing, crop_cx, crop_cy, segmenter=segmenter)
+    finally:
+        if segmenter is not None:
+            segmenter.close()
+    intermediate.unlink(missing_ok=True)
+
+    return {
+        "output_path": str(final),
+        "width": tw,
+        "height": th,
+        "aspect": aspect,
+        "duration": round(_probe_duration(str(final)), 3),
+        "num_caption_words": len(projected),
+    }
+
+
 def run_vertical_export(job) -> dict:
-    params = json.loads(job["params_json"] or "{}")
     video_id = job["video_id"]
 
     video = db.get_video(video_id)
@@ -103,58 +168,23 @@ def run_vertical_export(job) -> dict:
     tr = db.get_transcript(video_id)
     if tr is None:
         raise RuntimeError("transcript required for captions")
-    has_audio = bool(video["audio_codec"])
 
     edit = db.get_edit(video_id)
     segments = json.loads(edit["edl_json"]) if edit else [
         {"id": "full", "sourceStart": 0.0, "sourceEnd": video["duration_seconds"]}
     ]
-    kept = ordered_intervals(segments)
-    if not kept:
-        raise RuntimeError("EDL is empty; nothing to export.")
 
     out_dir = config.EXPORTS_DIR / video_id
     out_dir.mkdir(parents=True, exist_ok=True)
     intermediate = out_dir / f"{job['id']}_edit.mp4"
     final = out_dir / f"{job['id']}_vertical.mp4"
 
-    # Settings drive aspect / framing / captions.
     srow = db.get_settings(video_id)
     settings = json.loads(srow["json"]) if srow else DEFAULT_SETTINGS
-    aspect = settings.get("aspect", "9:16")
-    framing = settings.get("framing", "auto")
-    crop_cx = float(settings.get("crop_cx", 0.5))
-    crop_cy = float(settings.get("crop_cy", 0.5))
-    style = resolve_caption_style(settings.get("caption"))
-    tw, th = target_dims(aspect)
-
-    # Face-track trajectory (shared with the live preview); compute if missing.
-    reframe_path = out_dir / "reframe.json"
-    if not reframe_path.exists():
-        run_reframe(video_id)
-    rf = json.loads(reframe_path.read_text())
-    centers = rf.get("centers", [])
-
-    # 1. edit -> horizontal intermediate
-    render_segments(video["stored_path"], kept, has_audio, str(intermediate))
-
-    # 2. captions on the edited timeline
+    rf = load_reframe(video_id, out_dir)
     words = json.loads(tr["words_json"])
-    projected = project_words(segments, words)
-    renderer = CaptionRenderer(projected, width=tw, height=th, style=style) if projected else None
 
-    # 3. crop (aspect + trajectory/manual) + caption + mux
-    _reframe_and_caption(str(intermediate), str(final), renderer, centers, segments, aspect, framing, crop_cx, crop_cy)
-    intermediate.unlink(missing_ok=True)
-
-    out_duration = _probe_duration(str(final))
-    return {
-        "output_path": str(final),
-        "width": tw,
-        "height": th,
-        "aspect": aspect,
-        "duration": round(out_duration, 3),
-        "face_tracked": rf.get("tracked", False) and framing == "auto",
-        "face_rate": rf.get("face_rate", 0.0),
-        "num_caption_words": len(projected),
-    }
+    result = render_vertical_clip(video, words, segments, settings, rf.get("centers", []), intermediate, final)
+    result["face_tracked"] = rf.get("tracked", False) and settings.get("framing", "auto") == "auto"
+    result["face_rate"] = rf.get("face_rate", 0.0)
+    return result

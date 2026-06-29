@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { EditorPage } from "./EditorPage.jsx";
 import { useAuth } from "./hooks/useAuth.js";
 import { AuthScreen } from "./components/AuthScreen.jsx";
+import { RecorderModal } from "./components/RecorderModal.jsx";
+import { TEMPLATES } from "./templates.js";
 
 function StatusDot({ status }) {
   return <span className={`dot dot-${status}`} title={status} />;
@@ -14,6 +16,8 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [videos, setVideos] = useState({});
   const [showJobs, setShowJobs] = useState(false);
+  const [showRecorder, setShowRecorder] = useState(false);
+  const [template, setTemplate] = useState(null); // use-case template selected on home
   const fileInputRef = useRef(null);
 
   const [currentVideoId, setCurrentVideoIdState] = useState(
@@ -51,15 +55,40 @@ export default function App() {
     return () => clearInterval(t);
   }, [refreshJobs]);
 
+  // Apply a use-case template to a freshly uploaded video: merge its settings
+  // over the defaults and stash a starter AI prompt the editor will pre-fill.
+  async function applyTemplate(videoId, tpl) {
+    if (!tpl) return;
+    try {
+      const cur = await (await fetch(`/api/videos/${videoId}/settings`)).json();
+      const merged = {
+        ...cur,
+        ...tpl.settings,
+        caption: { ...cur.caption, ...(tpl.settings.caption || {}) },
+      };
+      await fetch(`/api/videos/${videoId}/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(merged),
+      });
+      if (tpl.prompt) sessionStorage.setItem(`clippy_prompt_${videoId}`, tpl.prompt);
+    } catch {
+      /* non-fatal — editor still opens with defaults */
+    }
+  }
+
   async function uploadFile(f) {
     if (!f) return;
     setUploading(true);
+    const tpl = template;
     try {
       const form = new FormData();
       form.append("file", f);
       const res = await fetch("/api/upload", { method: "POST", body: form });
       const data = await res.json();
       if (res.ok) {
+        await applyTemplate(data.video_id, tpl);
+        setTemplate(null);
         setCurrentVideoId(data.video_id);
         refreshJobs();
       }
@@ -83,6 +112,9 @@ export default function App() {
         </div>
         <div className="topbar-actions">
           <span className="user-email mono">{user.email}</span>
+          <button className="btn-ghost" onClick={() => setShowRecorder(true)}>
+            ● Record
+          </button>
           <button
             className="btn-amber"
             onClick={() => fileInputRef.current?.click()}
@@ -143,16 +175,48 @@ export default function App() {
             <img src="/clippy-logo.png" alt="Clippy" className="welcome-logo" />
             <h1>Forge shorts from any long video</h1>
             <p>Upload a video. Clippy transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
-            <button
-              className="btn-amber lg"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-            >
-              {uploading ? "Uploading…" : "Upload a video"}
-            </button>
+            <div className="welcome-actions">
+              <button
+                className="btn-amber lg"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? "Uploading…" : template ? `Upload for ${template.title}` : "Upload a video"}
+              </button>
+              <button className="btn-ghost lg" onClick={() => setShowRecorder(true)}>
+                ● Record instead
+              </button>
+            </div>
+
+            <div className="tpl-block">
+              <p className="tpl-eyebrow">…or start with an outcome</p>
+              <div className="tpl-grid">
+                {TEMPLATES.map((t) => (
+                  <button
+                    key={t.id}
+                    className={"tpl-card" + (template?.id === t.id ? " on" : "")}
+                    onClick={() => setTemplate((cur) => (cur?.id === t.id ? null : t))}
+                    disabled={uploading}
+                  >
+                    <span className="tpl-icon">{t.icon}</span>
+                    <span className="tpl-title">{t.title}</span>
+                    <span className="tpl-desc">{t.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="tpl-foot mono">
+                {template
+                  ? `Selected — sets ${template.settings.aspect}, ${template.settings.caption.preset} captions + a starter prompt. Now upload or record.`
+                  : "Picks aspect, captions, audio + a starter AI prompt — then you upload."}
+              </p>
+            </div>
           </div>
         )}
       </main>
+
+      {showRecorder && (
+        <RecorderModal onClose={() => setShowRecorder(false)} onUse={uploadFile} />
+      )}
     </div>
   );
 }

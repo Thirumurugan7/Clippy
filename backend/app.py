@@ -24,9 +24,11 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import auth, config, db
-from .edl import validate_edl
+from .edl import validate_edl, project_words
 from .fillers import detect_fillers
 from .presets import ASPECTS, CAPTION_PRESETS
+from .subtitles import group_cues, cues_to_srt, cues_to_vtt
+from .translate import translate_cues, LANGUAGES
 
 COOKIE = "clippy_session"
 _VIDEO_PATH = re.compile(r"^/api/videos/([0-9a-f]+)")
@@ -37,6 +39,8 @@ DEFAULT_SETTINGS = {
     "framing": "auto",
     "crop_cx": 0.5,
     "crop_cy": 0.5,
+    "enhance_audio": False,
+    "background": {"mode": "none", "color": "#10121a"},
     "caption": {"preset": "karaoke", "fontsize": 58, "color": "#ff8a3d", "position": "bottom"},
 }
 
@@ -290,6 +294,55 @@ def get_transcript(video_id: str) -> dict:
     }
 
 
+def _projected_caption_words(video_id: str) -> list[dict]:
+    """Transcript words mapped onto the edited timeline (same as the export)."""
+    tr = db.get_transcript(video_id)
+    if tr is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    words = json.loads(tr["words_json"])
+    edit = db.get_edit(video_id)
+    if edit is not None:
+        segments = json.loads(edit["edl_json"])
+    else:
+        v = db.get_video(video_id)
+        segments = [{"id": "full", "sourceStart": 0.0, "sourceEnd": v["duration_seconds"]}]
+    return project_words(segments, words)
+
+
+def _cues_for(video_id: str, lang: str) -> list[dict]:
+    """Caption cues for the edited clip, optionally translated to `lang`."""
+    cues = group_cues(_projected_caption_words(video_id))
+    if lang and lang in LANGUAGES:
+        cues = translate_cues(cues, lang)
+    return cues
+
+
+@app.get("/api/subtitles/languages")
+def subtitle_languages() -> dict:
+    """Languages Clippy can translate captions into (local gemma4)."""
+    return {"languages": [{"code": c, "name": n} for c, n in LANGUAGES.items()]}
+
+
+@app.get("/api/videos/{video_id}/subtitles.srt")
+def get_subtitles_srt(video_id: str, lang: str = ""):
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    suffix = f".{lang}" if lang in LANGUAGES else ""
+    body = cues_to_srt(_cues_for(video_id, lang))
+    return Response(content=body, media_type="application/x-subrip",
+                    headers={"Content-Disposition": f'attachment; filename="{video_id}{suffix}.srt"'})
+
+
+@app.get("/api/videos/{video_id}/subtitles.vtt")
+def get_subtitles_vtt(video_id: str, lang: str = ""):
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    suffix = f".{lang}" if lang in LANGUAGES else ""
+    body = cues_to_vtt(_cues_for(video_id, lang))
+    return Response(content=body, media_type="text/vtt",
+                    headers={"Content-Disposition": f'attachment; filename="{video_id}{suffix}.vtt"'})
+
+
 # Browsers request video in byte ranges so the player can seek. Starlette's
 # FileResponse does not implement Range, so we handle it explicitly here.
 _CHUNK = 1024 * 1024  # 1 MiB
@@ -448,6 +501,39 @@ def get_highlights(video_id: str) -> dict:
     }
 
 
+class BatchClip(BaseModel):
+    start: float
+    end: float
+    reason: str = ""
+
+
+class ExportBatchBody(BaseModel):
+    # If omitted, the stored highlight candidates (M3) are exported.
+    clips: list[BatchClip] | None = None
+
+
+@app.post("/api/videos/{video_id}/export_batch")
+def export_batch(video_id: str, body: ExportBatchBody | None = None) -> dict:
+    """Enqueue ONE job that renders many vertical shorts from this source.
+
+    Clips come from the request body, or fall back to the stored highlight
+    candidates. This is the "one long video -> many clips" flow.
+    """
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    if db.get_transcript(video_id) is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+
+    clips = [c.model_dump() for c in body.clips] if body and body.clips else None
+    if clips is None:
+        row = db.get_highlights(video_id)
+        clips = json.loads(row["clips_json"]) if row and row["clips_json"] else None
+        if not clips:
+            raise HTTPException(status_code=400, detail="no clips provided and no highlights available")
+    job_id = db.create_job(video_id, job_type="export_batch", params_json=json.dumps({"clips": clips}))
+    return {"job_id": job_id, "count": len(clips)}
+
+
 @app.post("/api/videos/{video_id}/export")
 def export_edit(video_id: str) -> dict:
     """Enqueue an export job that renders the saved EDL for this video.
@@ -493,11 +579,27 @@ def get_ai_edit(video_id: str) -> dict:
     }
 
 
+@app.get("/api/videos/{video_id}/ai_edit/turns")
+def get_ai_edit_turns(video_id: str) -> dict:
+    """The conversation so far — each turn's prompt and resulting proposal."""
+    turns = []
+    for row in db.get_ai_edit_turns(video_id):
+        turns.append({
+            "id": row["id"],
+            "prompt": row["prompt"],
+            "proposal": json.loads(row["proposal_json"]) if row["proposal_json"] else None,
+            "error": row["error"],
+        })
+    return {"turns": turns}
+
+
 class SettingsBody(BaseModel):
     aspect: str
     framing: str
     crop_cx: float
     crop_cy: float = 0.5
+    enhance_audio: bool = False
+    background: dict = {"mode": "none", "color": "#10121a"}
     caption: dict
 
 
@@ -570,3 +672,18 @@ def get_export_file(job_id: str, request: Request):
     if not out_path:
         raise HTTPException(status_code=500, detail="export has no output path")
     return _stream_with_range(Path(out_path), request)
+
+
+@app.get("/api/exports/{job_id}/clip/{index}/file")
+def get_batch_clip_file(job_id: str, index: int, request: Request):
+    """Stream one short from a batch export job by its clip index."""
+    job = db.get_job(job_id)
+    if job is None or job["type"] != "export_batch":
+        raise HTTPException(status_code=404, detail="batch export job not found")
+    if job["status"] != "done" or not job["result_json"]:
+        raise HTTPException(status_code=409, detail=f"export not ready (status={job['status']})")
+    clips = json.loads(job["result_json"]).get("clips", [])
+    match = next((c for c in clips if c.get("index") == index and c.get("output_path")), None)
+    if match is None:
+        raise HTTPException(status_code=404, detail="clip not found or failed to render")
+    return _stream_with_range(Path(match["output_path"]), request)

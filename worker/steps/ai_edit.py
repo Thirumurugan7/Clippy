@@ -22,4 +22,12 @@ def run_ai_edit_job(video_id: str, prompt: str) -> dict:
         raw=res.get("raw"),
         error=res.get("error"),
     )
+    # Record this turn so the next prompt can refine on it (conversational edit).
+    proposal = None
+    if res.get("clip"):
+        proposal = json.dumps({
+            "clip": res["clip"], "aspect": res.get("aspect"),
+            "caption_preset": res.get("caption_preset"), "reason": res.get("reason"),
+        })
+    db.append_ai_edit_turn(video_id, prompt, proposal_json=proposal, error=res.get("error"))
     return {"ok": res.get("error") is None, "aspect": res.get("aspect")}

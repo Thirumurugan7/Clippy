@@ -36,11 +36,29 @@ def parse_ai_edit(raw: str, duration: float) -> dict:
     }
 
 
-def _build_prompt(prompt: str, segments: list[dict], duration: float) -> str:
+def _history_block(history: list[dict]) -> str:
+    """Render prior turns so a follow-up like "make it shorter" has context."""
+    if not history:
+        return ""
+    lines = ["\nThis is an ongoing conversation. Earlier turns:"]
+    for h in history:
+        p = h.get("clip")
+        if p:
+            lines.append(
+                f'- You said "{h["prompt"]}" -> clip {p["start"]:.0f}-{p["end"]:.0f}s, '
+                f'{h.get("aspect")}, {h.get("caption_preset")}.'
+            )
+        else:
+            lines.append(f'- You said "{h["prompt"]}" -> (no valid clip).')
+    lines.append("Treat the new instruction below as a refinement of the latest proposal.\n")
+    return "\n".join(lines)
+
+
+def _build_prompt(prompt: str, segments: list[dict], duration: float, history: list[dict] | None = None) -> str:
     lines = [f"[{s['start']:.2f}-{s['end']:.2f}] {s['text'].strip()}" for s in segments]
     return f"""You are a short-form video editor. A creator gave this instruction:
 "{prompt}"
-
+{_history_block(history or [])}
 Below is the timestamped transcript of a {duration:.0f}-second video.
 
 Decide:
@@ -70,7 +88,18 @@ def detect_ai_edit(video_id: str, prompt: str) -> dict:
     segments = json.loads(tr["segments_json"])
     duration = tr["duration_seconds"] or (video["duration_seconds"] if video else 0.0)
     provider = get_provider()
-    full = _build_prompt(prompt, segments, duration)
+
+    # Prior turns give the model context so follow-ups refine, not restart.
+    history = []
+    for row in db.get_ai_edit_turns(video_id):
+        prop = json.loads(row["proposal_json"]) if row["proposal_json"] else None
+        history.append({
+            "prompt": row["prompt"],
+            "clip": prop.get("clip") if prop else None,
+            "aspect": prop.get("aspect") if prop else None,
+            "caption_preset": prop.get("caption_preset") if prop else None,
+        })
+    full = _build_prompt(prompt, segments, duration, history)
 
     raw = provider.complete(full, json_mode=True)
     try:

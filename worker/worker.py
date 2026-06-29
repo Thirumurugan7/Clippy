@@ -25,6 +25,7 @@ from worker.steps.export_edit import run_export_edit
 from worker.steps.waveform import run_waveform
 from worker.steps.highlights import run_highlights_job
 from worker.steps.vertical import run_vertical_export
+from worker.steps.export_batch import run_export_batch
 from worker.steps.reframe import run_reframe
 from worker.steps.ai_edit import run_ai_edit_job
 import json as _json
@@ -42,6 +43,7 @@ HANDLERS = {
     "ai_edit": lambda job: run_ai_edit_job(job["video_id"], _json.loads(job["params_json"] or "{}").get("prompt", "")),
     "export_edit": run_export_edit,
     "export_vertical": run_vertical_export,
+    "export_batch": run_export_batch,
 }
 
 _running = True

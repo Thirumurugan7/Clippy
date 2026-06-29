@@ -12,6 +12,8 @@ import { HighlightsRail } from "./components/HighlightsRail.jsx";
 import { CaptionsPanel } from "./components/CaptionsPanel.jsx";
 import { CropPanel } from "./components/CropPanel.jsx";
 import { AiEditPanel } from "./components/AiEditPanel.jsx";
+import { AudioPanel } from "./components/AudioPanel.jsx";
+import { BackgroundPanel } from "./components/BackgroundPanel.jsx";
 
 export function EditorPage({ videoId }) {
   const [duration, setDuration] = useState(0);
@@ -35,11 +37,31 @@ export function EditorPage({ videoId }) {
   return <EditorInner videoId={videoId} duration={duration} />;
 }
 
-const TABS = [
-  { id: "ai", label: "AI edit", icon: "🪄" },
-  { id: "highlights", label: "Highlights", icon: "✨" },
-  { id: "captions", label: "Captions", icon: "💬" },
-  { id: "crop", label: "Crop", icon: "⬚" },
+// Grouped tool rail — every feature is visible; "soon" tools read as roadmap.
+const TOOL_GROUPS = [
+  {
+    label: "Create",
+    tools: [
+      { id: "ai", label: "AI edit", icon: "🪄" },
+      { id: "highlights", label: "Highlights", icon: "✨" },
+    ],
+  },
+  {
+    label: "Style",
+    tools: [
+      { id: "captions", label: "Captions", icon: "💬" },
+      { id: "crop", label: "Reframe", icon: "⬚" },
+      { id: "bg", label: "Background", icon: "🎞" },
+    ],
+  },
+  {
+    label: "Sound",
+    tools: [{ id: "audio", label: "Audio", icon: "🔊" }],
+  },
+  {
+    label: "More",
+    tools: [{ id: "translate", label: "Translate", icon: "🌐", soon: true }],
+  },
 ];
 
 function EditorInner({ videoId, duration }) {
@@ -154,6 +176,15 @@ function EditorInner({ videoId, duration }) {
   return (
     <div className="editor">
       <div className="workspace">
+        <Sidebar groups={TOOL_GROUPS} active={tab} onSelect={setTab} collapsed={collapsed} onToggle={() => setCollapsed((s) => !s)}>
+          {tab === "ai" && <AiEditPanel videoId={videoId} onApply={onApplyAiEdit} />}
+          {tab === "highlights" && <HighlightsRail videoId={videoId} onUseClip={onUseClip} onPreviewClip={onPreviewClip} activeClip={activeClip} />}
+          {tab === "captions" && <CaptionsPanel settings={settings} setSettings={setSettings} videoId={videoId} />}
+          {tab === "crop" && <CropPanel settings={settings} setSettings={setSettings} />}
+          {tab === "bg" && <BackgroundPanel settings={settings} setSettings={setSettings} />}
+          {tab === "audio" && <AudioPanel settings={settings} setSettings={setSettings} />}
+        </Sidebar>
+
         <section className="stage">
           <div className="preview-head">
             <div className="seg-toggle">
@@ -215,13 +246,6 @@ function EditorInner({ videoId, duration }) {
             </div>
           )}
         </section>
-
-        <Sidebar tabs={TABS} active={tab} onSelect={setTab} collapsed={collapsed} onToggle={() => setCollapsed((s) => !s)}>
-          {tab === "ai" && <AiEditPanel videoId={videoId} onApply={onApplyAiEdit} />}
-          {tab === "highlights" && <HighlightsRail videoId={videoId} onUseClip={onUseClip} onPreviewClip={onPreviewClip} activeClip={activeClip} />}
-          {tab === "captions" && <CaptionsPanel settings={settings} setSettings={setSettings} />}
-          {tab === "crop" && <CropPanel settings={settings} setSettings={setSettings} />}
-        </Sidebar>
       </div>
 
       <Timeline edl={edl} peaks={peaks} originalDuration={duration} activeVirtual={activeVirtual} ops={ops} onSeek={seek} />

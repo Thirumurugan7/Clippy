@@ -24,6 +24,12 @@ def _bin(name: str) -> str:
     return path
 
 
+# Local audio cleanup chain (no external model needed, unlike RNNoise):
+# high-pass removes rumble, afftdn is an FFT denoiser, loudnorm brings the clip
+# to the -16 LUFS social-media target. Applied only when the user opts in.
+AUDIO_ENHANCE_FILTER = "highpass=f=70,afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11"
+
+
 def _probe_duration(path: str) -> float:
     out = subprocess.run(
         [_bin("ffprobe"), "-v", "error", "-show_entries", "format=duration",
@@ -33,7 +39,7 @@ def _probe_duration(path: str) -> float:
     return float(out.stdout.strip())
 
 
-def _build_filtergraph(kept: list[tuple[float, float]], has_audio: bool) -> str:
+def _build_filtergraph(kept: list[tuple[float, float]], has_audio: bool, enhance_audio: bool = False) -> str:
     parts = []
     for n, (s, e) in enumerate(kept):
         parts.append(
@@ -45,7 +51,13 @@ def _build_filtergraph(kept: list[tuple[float, float]], has_audio: bool) -> str:
             )
     if has_audio:
         streams = "".join(f"[v{n}][a{n}]" for n in range(len(kept)))
-        parts.append(f"{streams}concat=n={len(kept)}:v=1:a=1[outv][outa]")
+        # The concat'd audio comes from the complex graph, so the cleanup chain
+        # must live inside it too (ffmpeg forbids mixing -af with a graph output).
+        if enhance_audio:
+            parts.append(f"{streams}concat=n={len(kept)}:v=1:a=1[outv][acat];")
+            parts.append(f"[acat]{AUDIO_ENHANCE_FILTER}[outa]")
+        else:
+            parts.append(f"{streams}concat=n={len(kept)}:v=1:a=1[outv][outa]")
     else:
         streams = "".join(f"[v{n}]" for n in range(len(kept)))
         parts.append(f"{streams}concat=n={len(kept)}:v=1:a=0[outv]")
@@ -80,7 +92,9 @@ def run_export_edit(job) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{job['id']}.mp4"
 
-    render_segments(video["stored_path"], kept, has_audio, str(out_path))
+    srow = db.get_settings(video_id)
+    enhance_audio = bool(json.loads(srow["json"]).get("enhance_audio")) if srow else False
+    render_segments(video["stored_path"], kept, has_audio, str(out_path), enhance_audio=enhance_audio)
 
     out_duration = _probe_duration(str(out_path))
     return {
@@ -88,16 +102,19 @@ def run_export_edit(job) -> dict:
         "num_segments": len(kept),
         "original_duration": round(total_duration, 3),
         "output_duration": round(out_duration, 3),
+        "enhance_audio": enhance_audio,
     }
 
 
-def render_segments(src_path: str, kept: list[tuple[float, float]], has_audio: bool, out_path: str) -> None:
+def render_segments(src_path: str, kept: list[tuple[float, float]], has_audio: bool,
+                    out_path: str, enhance_audio: bool = False) -> None:
     """Cut + concat the given source-time intervals (in order) into out_path.
 
     Shared by the normal edit export and the vertical export (which reframes and
-    captions the result). Re-encodes for frame-accurate cuts.
+    captions the result). Re-encodes for frame-accurate cuts. When enhance_audio
+    is set and the source has audio, the cleanup chain is applied to the output.
     """
-    graph = _build_filtergraph(kept, has_audio)
+    graph = _build_filtergraph(kept, has_audio, enhance_audio)
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         f.write(graph)
         graph_path = f.name

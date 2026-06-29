@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CAPTION_PRESETS, PRESET_NAMES } from "../presets.js";
 
 const LABELS = {
@@ -23,8 +24,21 @@ function Sample({ name }) {
   );
 }
 
-export function CaptionsPanel({ settings, setSettings }) {
+export function CaptionsPanel({ settings, setSettings, videoId }) {
   const cap = settings.caption;
+  const [langs, setLangs] = useState([]);
+  const [lang, setLang] = useState("");
+
+  useEffect(() => {
+    fetch("/api/subtitles/languages")
+      .then((r) => r.json())
+      .then((d) => setLangs(d.languages || []))
+      .catch(() => {});
+  }, []);
+
+  const q = lang ? `?lang=${lang}` : "";
+  const suffix = lang ? `.${lang}` : "";
+
   return (
     <div className="panel">
       <h3>Captions</h3>
@@ -61,6 +75,28 @@ export function CaptionsPanel({ settings, setSettings }) {
           <option value="top">Top</option>
         </select>
       </div>
+
+      {videoId && (
+        <div className="cap-downloads">
+          <span className="cap-dl-label">Download caption file</span>
+          <div className="panel-row">
+            <label>Language</label>
+            <select value={lang} onChange={(e) => setLang(e.target.value)}>
+              <option value="">Original</option>
+              {langs.map((l) => (
+                <option key={l.code} value={l.code}>{l.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="cap-dl-row">
+            <a className="btn-use" href={`/api/videos/${videoId}/subtitles.srt${q}`} download={`captions${suffix}.srt`}>.srt</a>
+            <a className="btn-use" href={`/api/videos/${videoId}/subtitles.vtt${q}`} download={`captions${suffix}.vtt`}>.vtt</a>
+          </div>
+          <p className="cap-dl-hint mono">
+            {lang ? "Translated locally by gemma4 — may take a few seconds." : "Matches your current edit (YouTube, players, re-styling)."}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

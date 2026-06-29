@@ -8,9 +8,9 @@ Local-first tool that turns one long video into vertical short-form clips, edite
 by editing the transcript. All processing is **local and free**: ffmpeg +
 faster-whisper + mediapipe + gemma4 (via Ollama). No paid cloud APIs.
 
-This README documents the project **through the current milestone (M2)**. Later
-milestones (highlight detection, vertical export, SaaS shell) are added in order
-and this file grows with them.
+This README documents the project **through the current state (M0–M5 plus the
+editor sidebar, all shipped)**. The milestones below are listed in the order they
+were built.
 
 - **M0**: upload + SQLite job queue + worker (ffprobe metadata).
 - **M1**: faster-whisper transcription with word-level timestamps; transcript
@@ -147,8 +147,22 @@ Jobs live in SQLite, not memory. If the worker is killed mid-job, on restart it
 requeues any job left in `running` (see `db.reset_orphaned_jobs`). The queue and
 all video records survive an API or worker restart.
 
-## What is NOT built yet
+## What is built / not built yet
 
-Per the milestone plan, only M0 (upload + job queue + worker probe step) exists.
-Transcription, transcript editing, highlight detection, reframing/captions, and
-the multi-user SaaS shell are added in M1–M5.
+**Built (M0–M5 + sidebar):** upload + job queue + probe (M0), transcription
+(M1), non-destructive EDL editor (M2), gemma4 highlight detection (M3), 9:16
+face-tracked vertical export with karaoke captions (M4), and accounts +
+per-user isolation (M5), plus the editor sidebar (AI prompt-edit, 12 caption
+presets, crop/aspect).
+
+**Not built yet:**
+
+- **Batch export of multiple clips.** Highlights proposes several candidates and
+  "Use clip" narrows the editor to one range at a time; there is no one-pass
+  flow that emits N separate shorts from a single source.
+- **Server / self-hosted deployment.** The stack is local-first only (local
+  filesystem + SQLite, env-overridable paths). No container or production
+  deployment story yet.
+- **Concurrent multi-user processing.** M5 adds accounts and per-user isolation,
+  but the worker still runs exactly one job at a time (16 GB constraint) — users
+  share a single serial queue with no concurrency, priority, or fairness.

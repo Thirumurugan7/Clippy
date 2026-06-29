@@ -148,6 +148,20 @@ def init_db() -> None:
             );
             """
         )
+        # Conversational AI editing: one row per turn so the model can refine on
+        # prior turns ("make it shorter", "start at the joke instead").
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ai_edit_turns (
+                id            TEXT PRIMARY KEY,
+                video_id      TEXT NOT NULL REFERENCES videos(id),
+                prompt        TEXT NOT NULL,
+                proposal_json TEXT,
+                error         TEXT,
+                created_at    REAL NOT NULL
+            );
+            """
+        )
         # Migration for databases created before params_json existed.
         cols = [r["name"] for r in conn.execute("PRAGMA table_info(jobs)")]
         if "params_json" not in cols:
@@ -377,6 +391,25 @@ def save_ai_edit(video_id: str, *, clip_json, aspect, caption_preset, reason, ra
 def get_ai_edit(video_id: str) -> Optional[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute("SELECT * FROM ai_edits WHERE video_id=?", (video_id,)).fetchone()
+
+
+def append_ai_edit_turn(video_id: str, prompt: str, *, proposal_json, error) -> str:
+    turn_id = uuid.uuid4().hex
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO ai_edit_turns (id, video_id, prompt, proposal_json, error, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (turn_id, video_id, prompt, proposal_json, error, time.time()),
+        )
+    return turn_id
+
+
+def get_ai_edit_turns(video_id: str, limit: int = 50) -> list[sqlite3.Row]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT * FROM ai_edit_turns WHERE video_id=? ORDER BY created_at ASC LIMIT ?",
+            (video_id, limit),
+        ).fetchall()
 
 
 # --------------------------------------------------------------------------- #

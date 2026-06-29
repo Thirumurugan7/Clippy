@@ -1,4 +1,46 @@
+import { useState, useCallback } from "react";
 import { useHighlights } from "../hooks/useHighlights.js";
+
+// Enqueue ONE batch job that renders every highlight as its own vertical short,
+// then expose per-clip download links. The "one long video -> many clips" flow.
+function useBatchExport(videoId) {
+  const [status, setStatus] = useState("idle"); // idle|running|done|failed
+  const [result, setResult] = useState(null);
+  const [jobId, setJobId] = useState(null);
+  const [error, setError] = useState(null);
+
+  const run = useCallback(async () => {
+    setStatus("running");
+    setError(null);
+    setResult(null);
+    const res = await fetch(`/api/videos/${videoId}/export_batch`, { method: "POST" });
+    if (!res.ok) {
+      setStatus("failed");
+      setError((await res.json().catch(() => ({}))).detail || "could not start");
+      return;
+    }
+    const { job_id } = await res.json();
+    setJobId(job_id);
+    function poll() {
+      fetch(`/api/jobs/${job_id}`)
+        .then((r) => r.json())
+        .then((job) => {
+          if (job.status === "done") {
+            setResult(JSON.parse(job.result_json || "{}"));
+            setStatus("done");
+          } else if (job.status === "failed") {
+            setError(job.error);
+            setStatus("failed");
+          } else {
+            setTimeout(poll, 1500);
+          }
+        });
+    }
+    poll();
+  }, [videoId]);
+
+  return { status, result, jobId, error, run };
+}
 
 function fmt(t) {
   const m = Math.floor(t / 60);
@@ -30,6 +72,7 @@ function HeatRing({ score }) {
 
 export function HighlightsRail({ videoId, onUseClip, onPreviewClip, activeClip }) {
   const { status, clips, model, error, raw, generate } = useHighlights(videoId);
+  const batch = useBatchExport(videoId);
 
   return (
     <aside className="rail">
@@ -50,6 +93,46 @@ export function HighlightsRail({ videoId, onUseClip, onPreviewClip, activeClip }
             : "Find highlights"}
         </button>
       </div>
+
+      {clips && clips.length > 0 && (
+        <div className="batch-bar">
+          <button
+            className="btn-amber btn-batch"
+            onClick={batch.run}
+            disabled={batch.status === "running"}
+          >
+            {batch.status === "running"
+              ? `Rendering ${clips.length} shorts…`
+              : `Export all ${clips.length} as 9:16 shorts`}
+          </button>
+          {batch.status === "failed" && (
+            <p className="mono error">{batch.error || "batch export failed"}</p>
+          )}
+          {batch.status === "done" && batch.result && (
+            <div className="batch-results">
+              <p className="rail-foot mono">
+                {batch.result.ok}/{batch.result.count} rendered
+              </p>
+              {batch.result.clips.map((c) => (
+                <div key={c.index} className="batch-row">
+                  <span className="mono">#{c.index + 1} · {fmt(c.start)}–{fmt(c.end)}</span>
+                  {c.error ? (
+                    <span className="error mono">failed</span>
+                  ) : (
+                    <a
+                      className="btn-use"
+                      href={`/api/exports/${batch.jobId}/clip/${c.index}/file`}
+                      download={`clip-${c.index + 1}.mp4`}
+                    >
+                      Download
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {status === "running" && (
         <div className="rail-state mono">gemma4 is reading the transcript…</div>
