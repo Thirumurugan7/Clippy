@@ -96,9 +96,24 @@ Edit caption text directly (both have it).
 
 ## Tier 2 — Real gaps, heavier but local-feasible
 
-### G7. Speaker diarization / multi-speaker labels ⬜
-Descript labels speakers; enables per-speaker captions. Local via pyannote/whisperx
-(gated-model risk — like the GLM pull).
+### G7. Speaker diarization / multi-speaker labels ✅
+Descript labels speakers; enables per-speaker captions. Shipped **torch-free /
+download-free** to dodge the pyannote/whisperx gated-model wall (the GLM-pull risk).
+- [x] `backend/diarize.py` — ffmpeg → 16 kHz mono → per-segment **MFCC** embedding
+      (mean+std) in pure numpy → L2-normalise → silhouette-picked **k-means**
+      (stays at 1 speaker unless there's real separation; caps at `max_speakers`).
+      No new deps (numpy + stdlib `wave` only), no model download.
+- [x] `POST /api/videos/{id}/diarize` tags each transcript segment with a
+      `speaker` index (synchronous — clustering is fast) and persists it onto
+      `segments_json`; the transcript GET returns it.
+- [x] Subtitle panel: **Detect speakers** button + per-line speaker chips
+      (S1/S2… in distinct brand-family colours) + a speaker count.
+- [x] Tests: MFCC shape, embedding, k-means **separates two synthetic voices**
+      AND keeps one voice together, relabel-by-appearance, no-audio fallback,
+      plus a **real end-to-end** endpoint test on the seeded short. 80 backend green.
+- Optional follow-on: burned-in **per-speaker caption colour** in the export
+  (needs speaker on projected words + preview parity in `captionLayout.js`);
+  deferred to keep preview==export and this slice fully verified.
 
 ### G8. Eye-contact correction ⬜
 Both have it. Needs a specialized local model; heavy.
@@ -146,6 +161,89 @@ Veed editing extras. Each is a per-frame render addition.
 
 ---
 
+## Market scan — AI features rivals have that Clippy lacks (2026-07-01)
+
+A fresh look at the most popular AI editors — **Opus Clip, Submagic, Vizard/Klap,
+CapCut, Descript, Veed** — to find AI features we're still missing. Grouped by
+whether they fit Clippy's **local-first, torch-free, gemma4-on-device** stack.
+Legend as above. Sources listed at the bottom of this section.
+
+### Group A — Local-first & feasible (this is where to concentrate)
+These need no cloud, no gated models, no generative video — mostly gemma4 (already
+running) + ffmpeg/opencv (already used). High leverage, on-brand.
+
+- **A1. Virality / engagement score per clip ⬜** — Opus Clip & Klap score every
+  clip 0–100 (hook strength, emotional flow, payoff, trend fit) so creators post
+  the best moments. We already surface AI *highlights* but rank them arbitrarily.
+  *Local:* have gemma4 score each highlight on those axes → sort + show the score.
+  Cheap, big perceived value, differentiates the Highlights rail.
+- **A2. One-click "Auto-Edit" (agentic) ⬜** — Submagic AI Auto-Edit, CapCut
+  Auto-Edit, Descript **Underlord** produce a finished short in one click: pick a
+  moment → reframe → captions → silence/filler cut → enhance audio → hook title.
+  We already have *every one of these pieces* but the user must run them by hand.
+  *Local:* one orchestrator that chains the existing steps into a single "Make me
+  a short" action. Highest leverage — turns our parts into a product.
+- **A3. Silence / dead-air removal ✅** (2026-07-01) — Descript Magic Cut,
+  Submagic. `backend/silences.py`: ffmpeg `silencedetect` → parsed ranges, padded
+  inward so cuts don't clip speech, slivers dropped. `GET …/silences` returns
+  source-time ranges + total; "Remove silences" button in the Toolbar drops them
+  from the EDL (same review-then-apply flow as filler removal). 7 tests (parser,
+  padding, open-ended, real seeded short). 87 backend + 18 frontend green.
+- **A4. AI hook title + social copy ⬜** — Opus, Vizard, Submagic auto-write a
+  title, description, TikTok hook, and hashtags from the transcript. We generate
+  none. *Local:* one gemma4 call per clip → copyable caption/title/hashtags panel.
+- **A5. Keyword-highlight captions ⬜** — Submagic/Vizard highlight the punchy
+  words in a different colour as they're spoken. We animate a word-pop but colour
+  every word the same. *Local:* gemma4 (or a TF-IDF/keyness heuristic) tags
+  emphasis words → renderer colours them (both burn-in + preview).
+- **A6. Auto-emoji captions ⬜** — Vizard/Submagic drop a contextual emoji on the
+  right beat. *Local:* gemma4 picks an emoji per cue; we already bake colour
+  emoji (G11b), so the render path exists.
+- **A7. Auto-zoom / punch-in ⬜** — Submagic/Vizard push in on emphasis beats to
+  add energy. *Local:* deterministic scale-keyframes on emphasis/scene changes in
+  the existing frame loop (opencv). No model needed.
+- **A8. Chapters / show notes / timestamps ⬜** — podcast-tool staple. *Local:*
+  gemma4 over the transcript → chapter markers + summary. Cheap add-on.
+- **A9. Studio-sound-grade audio (de-reverb / stem split) 🟡** — Descript Studio
+  Sound 4.0 separates voice/music and removes reverb. We denoise + loudnorm only.
+  *Local:* de-reverb is doable in ffmpeg; true stem separation wants a model
+  (onnx Demucs-style) — heavier, evaluate before committing.
+
+### Group B — Generative / cloud-heavy (stays deferred, not Clippy's niche)
+Real features, but they need big generative models, stock libraries, or a cloud
+account — against the local-first promise. Tracked, not planned.
+
+- **B1. Auto B-roll ⬜** — Opus/Submagic/Vizard/CapCut insert contextual stock or
+  AI-generated B-roll. Needs a stock library or a generative video model. (Note:
+  even Opus's is unreliable — coffee-cup B-roll on a podcast-gear clip.)
+- **B2. AI avatars / talking-head from script ⬜** — CapCut, Veed, Submagic Avatar
+  Studio, HeyGen. Generative human synthesis.
+- **B3. Script-to-video / text-to-video ⬜** — CapCut, Veed Gen-AI Studio, Runway,
+  Pika. Full generative pipeline.
+- **B4. Voice cloning / AI dubbing / TTS ⬜** — Veed (125+ langs), Descript
+  Overdub 3.0, CapCut (269 voices). We translate *captions* locally; translated
+  *spoken audio* in a cloned voice is generative. Big model + ethics surface.
+- **B5. AI thumbnails ⬜** — Submagic ThumbMagic. Generative image.
+- **B6. Generative outpaint / aspect expansion ⬜** — fill new pixels when changing
+  aspect instead of cropping. Generative.
+- **B7. Social scheduler / publishing ⬜** — Vizard/CapCut post to TikTok/Reels/
+  Shorts. Cloud/account surface, not editing.
+
+### Group C — Known non-generative gaps already tracked
+- **Eye-contact correction (G8)** — specialized local model; **on hold** per
+  current decision.
+- **Multi-camera / sequences (G9)** — large editor change; on hold.
+- **Cross-segment crossfades** — small, still open (see G11b note).
+
+**Sources:** [Opus Clip](https://www.opus.pro/) · [Opus AI B-Roll](https://www.opus.pro/ai-b-roll) ·
+[Submagic](https://www.submagic.co/) · [Vizard top clipping tools 2026](https://vizard.ai/blog/top-5-ai-clipping-tools-2026) ·
+[CapCut 2026 AI suite](https://bibigpt.co/en/features/capcut-2026-ai-suite-explained) ·
+[Descript Underlord](https://www.descript.com/underlord) · [Descript Eye Contact](https://www.descript.com/tools/ai-eye-contact) ·
+[VEED](https://www.veed.io/) · [VEED AI dubbing](https://www.veed.io/tools/voice-dubber/ai-dubbing) ·
+[AI editing trends 2026 (Metricool)](https://metricool.com/ai-video-editor-trends/)
+
+---
+
 ## Tier 3 — Generative / SaaS scope (deferred: not Clippy's local-first niche)
 - ⏸️ AI B-roll generator, AI avatars / talking-head, text-to-video, slides-to-video
 - ⏸️ Voice cloning / TTS / Overdub (generative audio)
@@ -185,3 +283,20 @@ Veed editing extras. Each is a per-frame render addition.
   Apple Color Emoji) and fade-in/out transition, both browser-E2E-verified
   (baked "🔥 HOT TAKE 🔥" + fade brightness 31.5→132.3; 62 backend green).
   Remaining gaps are all heavy ML: G7 diarization / G8 eye-contact / G9 multi-cam.
+- 2026-07-01 — ✅ G7 speaker diarization shipped **torch-free / download-free**
+  (numpy MFCC + silhouette k-means, `POST …/diarize`, transcript speaker chips +
+  Detect button). 80 backend + 18 frontend green; build clean. Real-audio E2E
+  test on the seeded short. Browser E2E of the panel pending (no Chrome this
+  session). Remaining heavy-ML gaps: G8 eye-contact, G9 multi-cam.
+- 2026-07-01 — Market scan added (see "AI features rivals have that Clippy lacks"):
+  surveyed Opus Clip, Submagic, Vizard/Klap, CapCut, Descript, Veed. Split the
+  gaps into Group A (local-first & feasible — virality score, one-click Auto-Edit,
+  silence removal, hook-title/social-copy, keyword-highlight & auto-emoji captions,
+  auto-zoom, chapters, studio-sound) vs Group B (generative/cloud — B-roll,
+  avatars, text-to-video, voice cloning/dub, thumbnails, outpaint, scheduler).
+  G8/G9 on hold. Awaiting a call on where to concentrate.
+- 2026-07-01 — ✅ A3 silence/dead-air removal shipped (`silences.py` +
+  `GET …/silences` + Toolbar "Remove silences"; ffmpeg silencedetect, padded,
+  review-then-apply). 87 backend + 18 frontend green. Group A remaining: A1
+  virality score, A2 one-click Auto-Edit, A4 hook/social copy, A5/A6 caption AI,
+  A7 auto-zoom, A8 chapters, A9 studio-sound.

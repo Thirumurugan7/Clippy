@@ -58,12 +58,14 @@ def _group_lines(words, max_words, max_gap):
 
 
 class CaptionRenderer:
-    def __init__(self, words, *, width=1080, height=1920, style=None):
+    def __init__(self, words, *, width=1080, height=1920, style=None, lines=None):
         from backend.presets import resolve_caption_style
         self.W = width
         self.H = height
         self.s = style or resolve_caption_style(None)
-        self.lines = _group_lines(words, self.s["max_words"], 0.7)
+        # Pre-grouped `lines` (translated line-level captions) bypass word grouping
+        # so a translated cue stays one coherent line; otherwise group words.
+        self.lines = lines if lines is not None else _group_lines(words, self.s["max_words"], 0.7)
         self.font = ImageFont.truetype(self.s["font"] or _default_font_path(), int(self.s["fontsize"]))
         self.space = self.font.getbbox(" ")[2] or self.s["fontsize"] // 3
         self.pad = max(8, int(self.s["fontsize"] * 0.22))

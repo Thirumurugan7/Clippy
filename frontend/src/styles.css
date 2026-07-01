@@ -347,6 +347,10 @@ button:disabled { opacity: .45; cursor: default; }
 .sub-input { flex: 1; background: var(--bg-2); border: 1px solid var(--line); color: var(--text); border-radius: 7px; padding: 7px 9px; font: inherit; font-size: 13px; }
 .sub-input:focus { outline: none; border-color: var(--amber); background: var(--bg-3); }
 .sub-saving { color: var(--amber-2); flex-shrink: 0; }
+.sub-speakers { display: flex; align-items: center; gap: 10px; margin: 4px 0 6px; }
+.sub-speaker-count { color: var(--faint); font-size: 11px; }
+.sub-speaker { flex-shrink: 0; width: 26px; text-align: center; font-size: 10px; font-weight: 700;
+  color: #0d0d12; border-radius: 5px; padding: 2px 0; letter-spacing: .3px; }
 
 /* platform resize presets (Reframe panel) */
 .plat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; margin: 8px 0 16px; }

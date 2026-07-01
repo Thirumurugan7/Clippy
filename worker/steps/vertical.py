@@ -155,9 +155,17 @@ def render_vertical_clip(video, words, segments, settings, centers, intermediate
     # 1. edit -> horizontal intermediate (audio cleanup applied here if enabled)
     render_segments(video["stored_path"], kept, has_audio, str(intermediate), enhance_audio=enhance_audio)
 
-    # 2. captions on the edited timeline
+    # 2. captions on the edited timeline (translated to a target language if set)
     projected = project_words(segments, words)
-    renderer = CaptionRenderer(projected, width=tw, height=th, style=style) if projected else None
+    lang = (settings.get("caption") or {}).get("language") or ""
+    renderer = None
+    if projected:
+        trans_lines = None
+        if lang:
+            from backend.subtitles import group_cues
+            from backend.translate import translated_caption_lines
+            trans_lines = translated_caption_lines(group_cues(projected), lang) or None
+        renderer = CaptionRenderer(projected, width=tw, height=th, style=style, lines=trans_lines)
 
     # Background effect (blur / colour) via selfie segmentation, if enabled.
     segmenter = None

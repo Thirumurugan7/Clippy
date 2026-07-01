@@ -63,3 +63,37 @@ def translate_lines(lines: list[str], lang_code: str) -> list[str]:
 def translate_cues(cues: list[dict], lang_code: str) -> list[dict]:
     translated = translate_lines([c["text"] for c in cues], lang_code)
     return [{**c, "text": t} for c, t in zip(cues, translated)]
+
+
+def _cue_to_words(cue: dict) -> dict:
+    """Turn a translated line-level cue into a burnable display line: split the
+    text into words and spread the cue's [start, end] evenly over them so the
+    karaoke sweep still works, then keep them together as one line so the line
+    never fragments (word order differs across languages — no real per-word
+    timing exists to recover)."""
+    start, end = float(cue["start"]), float(cue["end"])
+    tokens = [t for t in cue["text"].split() if t]
+    if not tokens:
+        return {"start": start, "end": end, "words": []}
+    span = max(end - start, 0.4)
+    step = span / len(tokens)
+    words = [
+        {
+            "word": tok,
+            "virtual_start": round(start + i * step, 3),
+            "virtual_end": round(start + (i + 1) * step, 3),
+        }
+        for i, tok in enumerate(tokens)
+    ]
+    return {"start": words[0]["virtual_start"], "end": words[-1]["virtual_end"], "words": words}
+
+
+def translated_caption_lines(cues: list[dict], lang_code: str) -> list[dict]:
+    """Line-level translated captions ready for the burn-in renderer: each source
+    cue becomes one coherent display line in the target language, timed to the
+    original cue. Empty target language -> no lines (caller keeps word karaoke)."""
+    if not lang_code or lang_code not in LANGUAGES:
+        return []
+    tcues = translate_cues(cues, lang_code)
+    lines = [_cue_to_words(c) for c in tcues]
+    return [ln for ln in lines if ln["words"]]

@@ -53,3 +53,21 @@ def test_animate_renders_popped_word():
     r = CaptionRenderer(WORDS, width=1080, height=1920, style=style)
     out = r.draw(np.zeros((1920, 1080, 3), np.uint8), 0.02)  # just after word 1 activates
     assert out.shape == (1920, 1080, 3) and out.sum() > 0
+
+
+def test_pregrouped_lines_bypass_word_grouping():
+    # Translated line-level captions are handed in as `lines` and must be used
+    # verbatim (one coherent cue) instead of being regrouped by max_words.
+    lines = [{
+        "start": 0.0, "end": 3.0,
+        "words": [
+            {"word": "hola", "virtual_start": 0.0, "virtual_end": 1.0},
+            {"word": "mundo", "virtual_start": 1.0, "virtual_end": 2.0},
+            {"word": "entero", "virtual_start": 2.0, "virtual_end": 3.0},
+        ],
+    }]
+    style = resolve_caption_style({"preset": "karaoke"})  # max_words=4
+    r = CaptionRenderer([], width=1080, height=1920, style=style, lines=lines)
+    assert r.lines == lines  # not regrouped
+    out = r.draw(np.zeros((1920, 1080, 3), np.uint8), 1.5)
+    assert out.shape == (1920, 1080, 3) and out.sum() > 0

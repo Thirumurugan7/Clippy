@@ -6,6 +6,19 @@ function clock(t) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// Distinct, readable speaker colours (violet-family first to match the brand).
+export const SPEAKER_COLORS = ["#8b6cf6", "#f6a04d", "#4dd0e1", "#e05d8f", "#7bc86c", "#d7c04d"];
+
+// Map word index -> speaker using the diarized segments (word_start..word_end).
+function speakerByWordIndex(segments) {
+  const map = {};
+  for (const s of segments || []) {
+    if (s.speaker == null) continue;
+    for (let i = s.word_start; i < s.word_end; i++) map[i] = s.speaker;
+  }
+  return map;
+}
+
 // Group source-transcript words into editable caption lines.
 function groupCues(words, maxWords = 7, maxGap = 0.7) {
   const cues = [];
@@ -24,6 +37,7 @@ function groupCues(words, maxWords = 7, maxGap = 0.7) {
   return cues.map((ws) => ({
     start: ws[0].start,
     end: ws[ws.length - 1].end,
+    wi: ws[0].i,  // first word index -> speaker lookup
     text: ws.map((w) => w.word.trim()).join(" "),
   }));
 }
@@ -32,7 +46,27 @@ function groupCues(words, maxWords = 7, maxGap = 0.7) {
 // fix flows to burned-in captions AND the SRT/VTT downloads (all read the words).
 export function SubtitleEditor({ transcript, videoId, onReload }) {
   const [saving, setSaving] = useState(null);
+  const [detecting, setDetecting] = useState(false);
   const cues = useMemo(() => (transcript ? groupCues(transcript.words) : []), [transcript]);
+  const spk = useMemo(() => speakerByWordIndex(transcript?.segments), [transcript]);
+  const numSpeakers = useMemo(() => {
+    const vals = Object.values(spk);
+    return vals.length ? Math.max(...vals) + 1 : 0;
+  }, [spk]);
+
+  async function detectSpeakers() {
+    setDetecting(true);
+    try {
+      await fetch(`/api/videos/${videoId}/diarize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ max_speakers: 4 }),
+      });
+      if (onReload) await onReload();
+    } finally {
+      setDetecting(false);
+    }
+  }
 
   if (!transcript) {
     return (
@@ -63,24 +97,46 @@ export function SubtitleEditor({ transcript, videoId, onReload }) {
     <div className="panel">
       <h3>Subtitles</h3>
       <p className="panel-sub">Fix any line — changes flow to captions and the .srt/.vtt downloads.</p>
+
+      <div className="sub-speakers">
+        <button className="btn-use" onClick={detectSpeakers} disabled={detecting}>
+          {detecting ? "Detecting…" : numSpeakers ? "Re-detect speakers" : "Detect speakers"}
+        </button>
+        {numSpeakers > 0 && (
+          <span className="sub-speaker-count mono">
+            {numSpeakers === 1 ? "1 speaker" : `${numSpeakers} speakers`}
+          </span>
+        )}
+      </div>
+      <p className="cap-dl-hint mono">Local — labels who's talking on each line (no upload, no model download).</p>
+
       <div className="sub-list">
-        {cues.map((c, i) => (
-          <div className="sub-row" key={`${c.start.toFixed(2)}-${i}`}>
-            <span className="sub-time mono">{clock(c.start)}</span>
-            <input
-              className="sub-input"
-              defaultValue={c.text}
-              onBlur={(e) => saveCue(c, e.target.value, i)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  e.target.blur();
-                }
-              }}
-            />
-            {saving === i && <span className="sub-saving mono">saving…</span>}
-          </div>
-        ))}
+        {cues.map((c, i) => {
+          const s = spk[c.wi];
+          const color = s != null ? SPEAKER_COLORS[s % SPEAKER_COLORS.length] : null;
+          return (
+            <div className="sub-row" key={`${c.start.toFixed(2)}-${i}`}>
+              <span className="sub-time mono">{clock(c.start)}</span>
+              {numSpeakers > 1 && s != null && (
+                <span className="sub-speaker" style={{ background: color }} title={`Speaker ${s + 1}`}>
+                  S{s + 1}
+                </span>
+              )}
+              <input
+                className="sub-input"
+                defaultValue={c.text}
+                onBlur={(e) => saveCue(c, e.target.value, i)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.target.blur();
+                  }
+                }}
+              />
+              {saving === i && <span className="sub-saving mono">saving…</span>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

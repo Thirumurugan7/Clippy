@@ -27,7 +27,7 @@ function Sample({ name }) {
 export function CaptionsPanel({ settings, setSettings, videoId }) {
   const cap = settings.caption;
   const [langs, setLangs] = useState([]);
-  const [lang, setLang] = useState("");
+  const lang = cap.language || "";
 
   useEffect(() => {
     fetch("/api/subtitles/languages")
@@ -88,24 +88,30 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
         <span className={"switch" + (cap.animate ? " on" : "")} aria-hidden><span className="switch-knob" /></span>
       </button>
 
+      <div className="panel-row">
+        <label>Language</label>
+        <select value={lang} onChange={(e) => setSettings({ caption: { language: e.target.value } })}>
+          <option value="">Original</option>
+          {langs.map((l) => (
+            <option key={l.code} value={l.code}>{l.name}</option>
+          ))}
+        </select>
+      </div>
+      <p className="cap-dl-hint mono">
+        {lang
+          ? "Captions are translated locally by gemma4 and burned into the exported video."
+          : "Captions match the spoken language."}
+      </p>
+
       {videoId && (
         <div className="cap-downloads">
           <span className="cap-dl-label">Download caption file</span>
-          <div className="panel-row">
-            <label>Language</label>
-            <select value={lang} onChange={(e) => setLang(e.target.value)}>
-              <option value="">Original</option>
-              {langs.map((l) => (
-                <option key={l.code} value={l.code}>{l.name}</option>
-              ))}
-            </select>
-          </div>
           <div className="cap-dl-row">
             <a className="btn-use" href={`/api/videos/${videoId}/subtitles.srt${q}`} download={`captions${suffix}.srt`}>.srt</a>
             <a className="btn-use" href={`/api/videos/${videoId}/subtitles.vtt${q}`} download={`captions${suffix}.vtt`}>.vtt</a>
           </div>
           <p className="cap-dl-hint mono">
-            {lang ? "Translated locally by gemma4 — may take a few seconds." : "Matches your current edit (YouTube, players, re-styling)."}
+            {lang ? "Sidecar file in the selected language." : "Matches your current edit (YouTube, players, re-styling)."}
           </p>
         </div>
       )}

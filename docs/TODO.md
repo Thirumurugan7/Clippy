@@ -56,19 +56,39 @@ language and give feedback. Clippy's `ai_edit.py` was one-shot only.
 - Note: refinement *quality* is model/content-dependent — strong on real long
   videos, weak on the 25s sample (loose ±10s length tolerance). Plumbing is solid.
 
-### 4. Speaker diarization ⬜
+### 4. Speaker diarization ✅
 **Why:** Pairs naturally with the transcription we already do; enables
-speaker-labeled cuts. Local via pyannote or whisperx.
-- [ ] Diarize during/after transcription; attach speaker labels to words.
-- [ ] Show speaker labels in transcript; optional per-speaker caption colour.
-- [ ] Tests.
+speaker-labeled cuts. Shipped **torch-free / download-free** (numpy MFCC +
+k-means) rather than pyannote/whisperx, to dodge the gated-model wall.
+- [x] `backend/diarize.py`: ffmpeg → 16 kHz mono → per-segment MFCC embedding →
+      silhouette-picked k-means; labels attached to transcript segments.
+- [x] `POST /api/videos/{id}/diarize` persists `speaker` onto `segments_json`;
+      transcript GET returns it.
+- [x] Subtitle panel shows per-line speaker chips (coloured) + Detect button +
+      speaker count. (Per-speaker *caption* colour in the burned export is the
+      one optional follow-on — deferred to keep preview==export.)
+- [x] Tests: unit (MFCC/embedding/clustering both ways/relabel/no-audio) + real
+      end-to-end endpoint test on the seeded short. 80 backend + 18 frontend green.
 
-### 5. Subtitle translation / multi-language output ⬜
+### 5. Subtitle translation / multi-language output ✅
 **Why:** Veed's strength (100+ languages). Whisper already gives us the source;
-translate captions locally via gemma4 or whisper's translate task.
-- [ ] Translate caption track to a target language (gemma4 or whisper translate).
-- [ ] Language picker in caption settings.
-- [ ] Tests.
+translate captions locally via gemma4.
+- [x] Line-level translation of caption cues via local gemma4 (`translate.py`),
+      12-language curated allowlist, strict-JSON with source fallback (never
+      fails a render/download).
+- [x] Sidecar download: `GET …/subtitles.{srt,vtt}?lang=` translates cues on the
+      fly (`_cues_for`); `GET /api/subtitles/languages` lists targets.
+- [x] **Burned-in translated captions** (2026-07-01): `translated_caption_lines`
+      turns each cue into one coherent target-language display line (even per-word
+      timing so the karaoke sweep survives); `CaptionRenderer` gained a `lines=`
+      param so a translated cue never fragments. Threaded through the vertical +
+      batch export via `caption.language`.
+- [x] Language picker in the Captions panel (drives both the export and the
+      sidecar download); `caption.language` validated in `PUT …/settings`.
+      Removed the stale "Translate — soon" sidebar tool.
+- [x] Tests: `_cue_to_words` timing, `translated_caption_lines` burnable/ordered
+      (real gemma4), `CaptionRenderer` pregrouped-lines path, settings language
+      accept/reject. 70 backend + 18 frontend green; build clean.
 
 ---
 
@@ -163,5 +183,12 @@ Goal: every feature discoverable, like Veed/Descript but more distinctive.
 - 2026-06-29 — Browser verification pass: tool rail, Audio toggle, Export menu,
   Highlights "Export all 5", conversational AI edit (real gemma4 round-trip),
   Background panel — all confirmed working in the running app.
-- Still open: Tier-1 #4 diarization, #5 translation; Tier-2 #8 eye-contact —
-  heavier ML / rabbit-hole-prone; flagged for a focused pass.
+- 2026-07-01 — ✅ Tier-1 #5 subtitle translation completed: burned-in translated
+  captions in the exported video (not just sidecar SRT/VTT), language picker in
+  the Captions panel driving the export, validation + tests. 70 backend + 18
+  frontend green.
+- 2026-07-01 — ✅ Tier-1 #4 speaker diarization shipped torch-free / download-free
+  (numpy MFCC + silhouette k-means, `POST …/diarize`, transcript speaker chips +
+  Detect button). 80 backend + 18 frontend green.
+- Still open: Tier-2 #8 eye-contact (specialized local model) and multi-cam —
+  heaviest ML; flagged for a focused pass.

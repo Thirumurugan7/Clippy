@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from "react";
 export function Toolbar({
   onSplit,
   onDetectFillers,
+  onRemoveSilences,
   onExport,
   onExportVertical,
   undo,
@@ -34,6 +35,7 @@ export function Toolbar({
     <div className="toolbar">
       <button onClick={onSplit}>Split at playhead</button>
       <button onClick={onDetectFillers}>Remove filler words</button>
+      <button onClick={onRemoveSilences}>Remove silences</button>
       <span className="toolbar-spacer" />
       <button onClick={undo} disabled={!canUndo} title="Undo">↶</button>
       <button onClick={redo} disabled={!canRedo} title="Redo">↷</button>

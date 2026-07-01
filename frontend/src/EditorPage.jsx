@@ -62,10 +62,6 @@ const TOOL_GROUPS = [
     label: "Sound",
     tools: [{ id: "audio", label: "Audio", icon: "🔊" }],
   },
-  {
-    label: "More",
-    tools: [{ id: "translate", label: "Translate", icon: "🌐", soon: true }],
-  },
 ];
 
 function EditorInner({ videoId, duration }) {
@@ -141,6 +137,14 @@ function EditorInner({ videoId, duration }) {
       const w = transcript.words[i];
       if (w) ops.deleteSourceRange(w.start, w.end);
     }
+  }
+
+  async function removeSilences() {
+    const res = await fetch(`/api/videos/${videoId}/silences`);
+    if (!res.ok) return;
+    const { ranges } = await res.json();
+    // Source-time ranges are absolute and independent, so order doesn't matter.
+    for (const r of ranges) ops.deleteSourceRange(r.start, r.end);
   }
 
   function onPreviewClip(c) {
@@ -225,6 +229,7 @@ function EditorInner({ videoId, duration }) {
 
           <Toolbar
             onSplit={splitAtPlayhead} onDetectFillers={detectFillers}
+            onRemoveSilences={removeSilences}
             onExport={doExport} onExportVertical={doExportVertical}
             undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo}
             saving={saving} saveError={saveError} exporting={exporting}

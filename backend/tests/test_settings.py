@@ -42,3 +42,19 @@ def test_put_rejects_bad_preset():
                         caption={"preset": "nope"})
     with pytest.raises(HTTPException):
         put_settings(vid, body)
+
+
+def test_put_rejects_bad_caption_language():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "language": "xx"})
+    with pytest.raises(HTTPException):
+        put_settings(vid, body)
+
+
+def test_put_accepts_known_caption_language():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "language": "es"})
+    assert put_settings(vid, body) == {"ok": True}
+    assert get_settings(vid)["caption"]["language"] == "es"

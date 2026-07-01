@@ -26,10 +26,12 @@ from pydantic import BaseModel
 from . import auth, config, db
 from .edl import validate_edl, project_words
 from .fillers import detect_fillers
+from .silences import detect_silences, total_silence
 from .presets import ASPECTS, CAPTION_PRESETS
 from .subtitles import group_cues, cues_to_srt, cues_to_vtt
 from .subtitle_edit import replace_cue_words
 from .translate import translate_cues, LANGUAGES
+from .diarize import diarize_segments
 
 COOKIE = "clippy_session"
 _VIDEO_PATH = re.compile(r"^/api/videos/([0-9a-f]+)")
@@ -350,6 +352,33 @@ def edit_transcript_cue(video_id: str, body: CueEdit) -> dict:
     return {"ok": True, "word_count": len(updated)}
 
 
+class DiarizeBody(BaseModel):
+    max_speakers: int = 4
+
+
+@app.post("/api/videos/{video_id}/diarize")
+def diarize_video(video_id: str, body: DiarizeBody = DiarizeBody()) -> dict:
+    """Tag each transcript segment with a speaker index (local, no model download).
+
+    Runs synchronously — MFCC + clustering over the segments is fast (numpy). The
+    speaker labels are written back onto `segments_json`, so they flow to the
+    transcript view and can colour captions per speaker.
+    """
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    tr = db.get_transcript(video_id)
+    if tr is None:
+        raise HTTPException(status_code=400, detail="transcript not ready")
+    max_speakers = max(1, min(int(body.max_speakers), 8))
+    segments = json.loads(tr["segments_json"])
+    labels = diarize_segments(video["stored_path"], segments, max_speakers=max_speakers)
+    for seg, spk in zip(segments, labels):
+        seg["speaker"] = int(spk)
+    db.update_transcript_segments(video_id, json.dumps(segments))
+    return {"ok": True, "num_speakers": (max(labels) + 1) if labels else 0, "segments": segments}
+
+
 @app.get("/api/videos/{video_id}/subtitles.srt")
 def get_subtitles_srt(video_id: str, lang: str = ""):
     if db.get_video(video_id) is None:
@@ -466,6 +495,25 @@ def get_fillers(video_id: str) -> dict:
     words = json.loads(tr["words_json"])
     indices = detect_fillers(words)
     return {"indices": indices, "count": len(indices)}
+
+
+@app.get("/api/videos/{video_id}/silences")
+def get_silences(video_id: str, min_silence: float = 0.6, noise_db: float = -30.0) -> dict:
+    """Detect dead-air ranges (source time) for the user to cut. Local, ffmpeg-only.
+
+    Same review-then-apply flow as filler removal: the frontend drops these ranges
+    from the EDL; nothing is deleted automatically.
+    """
+    video = db.get_video(video_id)
+    if video is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    ranges = detect_silences(
+        video["stored_path"],
+        noise_db=noise_db,
+        min_silence=max(0.2, min_silence),
+        duration=video["duration_seconds"],
+    )
+    return {"ranges": ranges, "count": len(ranges), "total_seconds": total_silence(ranges)}
 
 
 class EdlBody(BaseModel):
@@ -653,6 +701,9 @@ def put_settings(video_id: str, body: SettingsBody) -> dict:
         raise HTTPException(status_code=400, detail="crop_cx out of range")
     if body.caption.get("preset") not in CAPTION_PRESETS:
         raise HTTPException(status_code=400, detail="unknown caption preset")
+    lang = body.caption.get("language")
+    if lang and lang not in LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"unknown caption language {lang}")
     db.save_settings(video_id, json.dumps(body.model_dump()))
     return {"ok": True}
 
