@@ -48,11 +48,34 @@ function fmt(t) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-// Circular "heat" gauge — the signature element. Fill ∝ score; hotter = stronger.
+// The heat scale: a cool score is blue, a hot one climbs violet → magenta → amber.
+// Colour encodes hook strength, not just the fill amount — the page's signature.
+const HEAT_STOPS = [
+  [0.0, [0x6d, 0x7c, 0xf6]],
+  [0.5, [0x8b, 0x6c, 0xf6]],
+  [0.8, [0xe0, 0x56, 0x9f]],
+  [1.0, [0xf5, 0xa3, 0x4d]],
+];
+
+function heatColor(pct) {
+  for (let i = 1; i < HEAT_STOPS.length; i++) {
+    const [p1, c1] = HEAT_STOPS[i];
+    if (pct <= p1) {
+      const [p0, c0] = HEAT_STOPS[i - 1];
+      const t = p1 === p0 ? 0 : (pct - p0) / (p1 - p0);
+      const [r, g, b] = c0.map((v, k) => Math.round(v + (c1[k] - v) * t));
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+  }
+  return "rgb(245, 163, 77)";
+}
+
+// Circular "heat" gauge — the signature element. Fill ∝ score; hue = hook strength.
 function HeatRing({ score }) {
   const pct = score == null ? 0 : Math.max(0, Math.min(1, score));
   const r = 18;
   const c = 2 * Math.PI * r;
+  const col = heatColor(pct);
   return (
     <svg className="heat-ring" width="46" height="46" viewBox="0 0 46 46" aria-hidden>
       <circle cx="23" cy="23" r={r} className="heat-track" />
@@ -61,7 +84,12 @@ function HeatRing({ score }) {
         cy="23"
         r={r}
         className="heat-fill"
-        style={{ strokeDasharray: c, strokeDashoffset: c * (1 - pct) }}
+        style={{
+          stroke: score == null ? "var(--line-2)" : col,
+          strokeDasharray: c,
+          strokeDashoffset: c * (1 - pct),
+          filter: score == null ? "none" : `drop-shadow(0 0 5px ${col})`,
+        }}
       />
       <text x="23" y="24" className="heat-num">
         {score == null ? "–" : Math.round(pct * 100)}

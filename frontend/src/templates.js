@@ -7,7 +7,7 @@ export const TEMPLATES = [
     id: "talking_head",
     title: "Talking-head reel",
     desc: "9:16, face-tracked, blurred background, karaoke captions",
-    icon: "🎙",
+    icon: "mic",
     prompt: "Make a punchy 30-second vertical reel of the strongest point.",
     settings: {
       aspect: "9:16",
@@ -21,7 +21,7 @@ export const TEMPLATES = [
     id: "podcast_clip",
     title: "Podcast clip",
     desc: "9:16, bold captions, cleaned-up audio",
-    icon: "🎧",
+    icon: "headphones",
     prompt: "Find the most engaging 40-second moment and make it a clip.",
     settings: {
       aspect: "9:16",
@@ -35,7 +35,7 @@ export const TEMPLATES = [
     id: "subtitled_short",
     title: "Subtitled short",
     desc: "9:16, clean subtitles — great for sound-off feeds",
-    icon: "💬",
+    icon: "message",
     prompt: "Make a 30-second clip with clear, readable subtitles.",
     settings: {
       aspect: "9:16",
@@ -49,7 +49,7 @@ export const TEMPLATES = [
     id: "square_promo",
     title: "Square promo",
     desc: "1:1, bold pop captions — feed-native promo",
-    icon: "⬛",
+    icon: "square",
     prompt: "Make a punchy 20-second square promo of the best line.",
     settings: {
       aspect: "1:1",

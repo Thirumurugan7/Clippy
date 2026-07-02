@@ -1,3 +1,5 @@
+import { Icon } from "./Icon.jsx";
+
 const ASPECT_OPTS = [
   { id: "9:16", label: "9:16", hint: "Reels / TikTok / Shorts" },
   { id: "1:1", label: "1:1", hint: "Square post" },
@@ -9,12 +11,12 @@ const ASPECT_OPTS = [
 // AND nudges caption position so text clears the platform's own on-screen UI
 // (TikTok/Reels cover the lower third, so captions move to center there).
 const PLATFORMS = [
-  { id: "tiktok", label: "TikTok", icon: "🎵", aspect: "9:16", position: "center" },
-  { id: "reels", label: "Reels", icon: "📸", aspect: "9:16", position: "center" },
-  { id: "shorts", label: "Shorts", icon: "▶️", aspect: "9:16", position: "bottom" },
-  { id: "ig_square", label: "Insta 1:1", icon: "⬛", aspect: "1:1", position: "bottom" },
-  { id: "ig_portrait", label: "Insta 4:5", icon: "🖼", aspect: "4:5", position: "bottom" },
-  { id: "youtube", label: "YouTube", icon: "📺", aspect: "16:9", position: "bottom" },
+  { id: "tiktok", label: "TikTok", icon: "music", aspect: "9:16", position: "center" },
+  { id: "reels", label: "Reels", icon: "camera", aspect: "9:16", position: "center" },
+  { id: "shorts", label: "Shorts", icon: "play", aspect: "9:16", position: "bottom" },
+  { id: "ig_square", label: "Insta 1:1", icon: "square", aspect: "1:1", position: "bottom" },
+  { id: "ig_portrait", label: "Insta 4:5", icon: "portrait", aspect: "4:5", position: "bottom" },
+  { id: "youtube", label: "YouTube", icon: "monitor", aspect: "16:9", position: "bottom" },
 ];
 
 export function CropPanel({ settings, setSettings }) {
@@ -33,7 +35,7 @@ export function CropPanel({ settings, setSettings }) {
             onClick={() => setSettings({ aspect: p.aspect, caption: { position: p.position } })}
             title={`${p.aspect} · captions ${p.position}`}
           >
-            <span className="plat-icon">{p.icon}</span>
+            <span className="plat-icon"><Icon name={p.icon} size={15} /></span>
             {p.label}
           </button>
         ))}

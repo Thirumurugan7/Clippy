@@ -44,23 +44,23 @@ const TOOL_GROUPS = [
   {
     label: "Create",
     tools: [
-      { id: "ai", label: "AI edit", icon: "🪄" },
-      { id: "highlights", label: "Highlights", icon: "✨" },
+      { id: "ai", label: "AI edit", icon: "wand" },
+      { id: "highlights", label: "Highlights", icon: "sparkles" },
     ],
   },
   {
     label: "Style",
     tools: [
-      { id: "captions", label: "Captions", icon: "💬" },
-      { id: "subtitles", label: "Subtitles", icon: "✏️" },
-      { id: "crop", label: "Reframe", icon: "⬚" },
-      { id: "bg", label: "Background", icon: "🎞" },
-      { id: "overlays", label: "Overlays", icon: "▭" },
+      { id: "captions", label: "Captions", icon: "captions" },
+      { id: "subtitles", label: "Subtitles", icon: "edit" },
+      { id: "crop", label: "Reframe", icon: "crop" },
+      { id: "bg", label: "Background", icon: "image" },
+      { id: "overlays", label: "Overlays", icon: "layers" },
     ],
   },
   {
     label: "Sound",
-    tools: [{ id: "audio", label: "Audio", icon: "🔊" }],
+    tools: [{ id: "audio", label: "Audio", icon: "waveform" }],
   },
 ];
 

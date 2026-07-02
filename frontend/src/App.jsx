@@ -3,6 +3,7 @@ import { EditorPage } from "./EditorPage.jsx";
 import { useAuth } from "./hooks/useAuth.js";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { RecorderModal } from "./components/RecorderModal.jsx";
+import { Icon } from "./components/Icon.jsx";
 import { TEMPLATES } from "./templates.js";
 
 function StatusDot({ status }) {
@@ -108,12 +109,13 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <img src="/clippy-logo.png" alt="Clippy" className="brand-logo" />
+          <span className="brand-name">Clippy</span>
           <span className="brand-tag">long video → shorts</span>
         </div>
         <div className="topbar-actions">
           <span className="user-email mono">{user.email}</span>
-          <button className="btn-ghost" onClick={() => setShowRecorder(true)}>
-            ● Record
+          <button className="btn-ghost btn-icon" onClick={() => setShowRecorder(true)}>
+            <Icon name="record" size={13} className="ico-rec" /> Record
           </button>
           <button
             className="btn-amber"
@@ -173,7 +175,7 @@ export default function App() {
         ) : (
           <div className="welcome">
             <img src="/clippy-logo.png" alt="Clippy" className="welcome-logo" />
-            <h1>Forge shorts from any long video</h1>
+            <h1>Turn one long video into a week of shorts</h1>
             <p>Upload a video. Clippy transcribes it, finds the strongest moments, and lets you edit by editing the transcript — all on your machine.</p>
             <div className="welcome-actions">
               <button
@@ -183,8 +185,8 @@ export default function App() {
               >
                 {uploading ? "Uploading…" : template ? `Upload for ${template.title}` : "Upload a video"}
               </button>
-              <button className="btn-ghost lg" onClick={() => setShowRecorder(true)}>
-                ● Record instead
+              <button className="btn-ghost lg btn-icon" onClick={() => setShowRecorder(true)}>
+                <Icon name="record" size={14} className="ico-rec" /> Record instead
               </button>
             </div>
 
@@ -198,7 +200,7 @@ export default function App() {
                     onClick={() => setTemplate((cur) => (cur?.id === t.id ? null : t))}
                     disabled={uploading}
                   >
-                    <span className="tpl-icon">{t.icon}</span>
+                    <span className="tpl-icon"><Icon name={t.icon} size={22} /></span>
                     <span className="tpl-title">{t.title}</span>
                     <span className="tpl-desc">{t.desc}</span>
                   </button>
