@@ -4,8 +4,21 @@ import { totalDuration, segmentDuration } from "../edl.js";
 // Visual timeline: each EDL segment is a clip block (width ∝ duration) with a
 // waveform slice, left/right trim handles, a delete button, and HTML5
 // drag-to-reorder. A playhead line tracks the preview. Clicking a clip seeks.
+function fmtClock(t) {
+  const m = Math.floor(t / 60);
+  const s = Math.floor(t % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+// Pick a "nice" tick spacing so the ruler shows roughly 5–8 labels.
+function tickStep(total) {
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  return steps.find((s) => total / s <= 7) || 900;
+}
+
 export function Timeline({ edl, peaks, originalDuration, activeVirtual, ops, onSeek }) {
   const dragFrom = useRef(null);
+  const rulerRef = useRef(null);
   const total = totalDuration(edl) || 1;
 
   // virtual start time of each segment (prefix sum), for click-to-seek.
@@ -14,6 +27,27 @@ export function Timeline({ edl, peaks, originalDuration, activeVirtual, ops, onS
   for (const s of edl) {
     prefix.push(acc);
     acc += segmentDuration(s);
+  }
+
+  // Ruler ticks across the virtual timeline.
+  const step = tickStep(total);
+  const ticks = [];
+  for (let t = 0; t <= total + 1e-6; t += step) ticks.push(t);
+
+  function scrub(e) {
+    const rect = rulerRef.current.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    onSeek(frac * total);
+  }
+  function startScrub(e) {
+    scrub(e);
+    const move = (ev) => scrub(ev);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   }
 
   function WaveformCanvas({ seg }) {
@@ -64,13 +98,22 @@ export function Timeline({ edl, peaks, originalDuration, activeVirtual, ops, onS
 
   return (
     <div className="timeline">
+      <div className="timeline-ruler" ref={rulerRef} onPointerDown={startScrub}>
+        {ticks.map((t, k) => (
+          <span key={k} className="tl-tick" style={{ left: `${(t / total) * 100}%` }}>
+            <span className="tl-tick-label mono">{fmtClock(t)}</span>
+          </span>
+        ))}
+        <span className="tl-scrub-head" style={{ left: `${(activeVirtual / total) * 100}%` }} />
+      </div>
       <div className="timeline-track">
         {edl.map((seg, i) => {
           const frac = segmentDuration(seg) / total;
+          const isActive = activeVirtual >= prefix[i] && activeVirtual < prefix[i] + segmentDuration(seg);
           return (
             <div
               key={seg.id}
-              className="clip"
+              className={"clip" + (isActive ? " clip-active" : "")}
               style={{ flex: `${frac} 1 0` }}
               draggable
               onDragStart={() => (dragFrom.current = i)}

@@ -62,9 +62,26 @@ CAPTION_PRESETS = {
 
 DEFAULT_PRESET = "karaoke"
 
+# Reveal type = HOW words appear over time (independent of the colour preset).
+# Mirrors Descript (Karaoke / Clean / word-by-word) and Veed's dynamic captions.
+#   highlight — whole line shown, active word emphasised (classic karaoke).
+#   build     — words appear one-by-one as spoken and stay (cumulative).
+#   word      — one word on screen at a time (big, TikTok-style).
+#   line      — whole line shown at once, steady, no per-word emphasis (clean).
+REVEALS = {"highlight", "build", "word", "line"}
+DEFAULT_REVEAL = "highlight"
+
+# Per-word MOTION applied to the active word (mirrors Veed's named animations:
+# Impact Pop, Scale In, Float In, Drop In, Slide In, Stomp, Bounce, Pulse).
+# Composes with any reveal type + colour style, so Clippy reproduces every
+# Veed/Descript caption preset by combining these three axes.
+ANIMATIONS = {"none", "pop", "bounce", "scale_in", "float_in",
+              "drop_in", "slide_in", "stomp", "pulse"}
+DEFAULT_ANIMATION = "none"
+
 
 def resolve_caption_style(caption: dict | None) -> dict:
-    """Preset defaults overlaid with user fontsize/color/position overrides."""
+    """Preset defaults overlaid with user fontsize/color/position/reveal/motion."""
     caption = caption or {}
     preset = caption.get("preset", DEFAULT_PRESET)
     style = dict(CAPTION_PRESETS.get(preset, CAPTION_PRESETS[DEFAULT_PRESET]))
@@ -74,5 +91,13 @@ def resolve_caption_style(caption: dict | None) -> dict:
         style["primary"] = caption["color"]
     if caption.get("position"):
         style["position"] = caption["position"]
-    style["animate"] = bool(caption.get("animate", False))
+    reveal = caption.get("reveal", DEFAULT_REVEAL)
+    style["reveal"] = reveal if reveal in REVEALS else DEFAULT_REVEAL
+    # Motion: explicit `animation` wins; else fall back to the legacy `animate`
+    # boolean (which meant "pop"). Keeps old saved settings working.
+    anim = caption.get("animation")
+    if anim is None:
+        anim = "pop" if caption.get("animate") else DEFAULT_ANIMATION
+    style["animation"] = anim if anim in ANIMATIONS else DEFAULT_ANIMATION
+    style["animate"] = style["animation"] != "none"
     return style

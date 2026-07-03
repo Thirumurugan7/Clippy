@@ -30,17 +30,38 @@ def _rgba(h):
     return (r, g, b, a)
 
 
-# Word-pop animation (mirrors frontend captionLayout.popScale): the active word
-# scales up for the first POP_DUR of its window, easing back to 1.0.
-POP_DUR = 0.18
-POP_AMOUNT = 0.3
+import math
+
+# Per-word motion. Each returns (scale, dx, dy, alpha) for the active word at
+# elapsed time `e` (seconds since it became active), over a `dur`-second entrance.
+# MUST match frontend captionLayout.wordAnim so preview == export.
+ANIM_DUR = 0.25
 
 
-def _pop_scale(t, w):
-    e = t - w["virtual_start"]
-    if e < 0 or e > POP_DUR:
-        return 1.0
-    return 1.0 + POP_AMOUNT * (1 - e / POP_DUR)
+def word_anim(name, e, dur, fs):
+    if not name or name == "none":
+        return (1.0, 0.0, 0.0, 1.0)
+    if name == "pulse":  # continuous gentle breathing while active
+        return (1.0 + 0.05 * math.sin(2 * math.pi * e / 0.7), 0.0, 0.0, 1.0)
+    p = e / dur if dur > 0 else 1.0
+    if p < 0 or p > 1:
+        return (1.0, 0.0, 0.0, 1.0)
+    q = 1.0 - p
+    if name == "pop":
+        return (1.0 + 0.30 * q, 0.0, 0.0, 1.0)
+    if name == "bounce":
+        return (1.0 + 0.35 * math.sin(math.pi * p), 0.0, 0.0, 1.0)
+    if name == "scale_in":
+        return (0.4 + 0.6 * p, 0.0, 0.0, p)
+    if name == "float_in":
+        return (1.0, 0.0, 0.55 * fs * q, p)      # rises up into place
+    if name == "drop_in":
+        return (1.0, 0.0, -0.55 * fs * q, p)     # falls down into place
+    if name == "slide_in":
+        return (1.0, 0.6 * fs * q, 0.0, p)       # slides in from the right
+    if name == "stomp":
+        return (1.0 + 0.8 * q * q, 0.0, 0.0, min(1.0, 0.5 + 0.5 * p))
+    return (1.0, 0.0, 0.0, 1.0)
 
 
 def _group_lines(words, max_words, max_gap):
@@ -80,10 +101,32 @@ class CaptionRenderer:
                 return ln
         return None
 
-    def _wrap(self, line):
+    def _visible(self, w, t):
+        """Whether a word is on screen at t, given the reveal type."""
+        reveal = self.s.get("reveal", "highlight")
+        if reveal == "word":
+            return w["virtual_start"] <= t <= w["virtual_end"]
+        if reveal == "build":
+            return t >= w["virtual_start"]
+        return True  # highlight, line
+
+    def _state(self, w, t):
+        """active | upcoming | past | line — drives colour and emphasis."""
+        reveal = self.s.get("reveal", "highlight")
+        if reveal == "line":
+            return "line"
+        if w["virtual_start"] <= t <= w["virtual_end"]:
+            return "active"
+        if reveal == "build":
+            return "past"      # already-spoken words stay bright
+        if reveal == "word":
+            return "active"    # only the active word is ever shown
+        return "upcoming"      # highlight: not-yet/again-dim
+
+    def _wrap(self, words):
         max_w = self.W - 120
         rows, row, row_w = [], [], 0
-        for w in line["words"]:
+        for w in words:
             tw = self.font.getbbox(self._txt(w))[2]
             add = tw + (self.space if row else 0)
             if row and row_w + add > max_w:
@@ -100,9 +143,12 @@ class CaptionRenderer:
         line = self._active_line(t)
         if line is None:
             return frame_bgr
+        shown = [w for w in line["words"] if self._visible(w, t)]
+        if not shown:
+            return frame_bgr
         s = self.s
         img = Image.fromarray(frame_bgr[:, :, ::-1]).convert("RGBA")
-        rows = self._wrap(line)
+        rows = self._wrap(shown)
         line_h = (self.font.getbbox("Ay")[3] - self.font.getbbox("Ay")[1]) + 18
         total_h = line_h * len(rows)
         if s["position"] == "center":
@@ -125,8 +171,8 @@ class CaptionRenderer:
                                      radius=14, fill=_rgba(s["line_band"]))
             cx = x
             for w, tw in zip(r, widths):
-                active = w["virtual_start"] <= t <= w["virtual_end"]
-                box = _rgba(s["active_box"]) if active and s["active_box"] else _rgba(s["word_box"])
+                st = self._state(w, t)
+                box = _rgba(s["active_box"]) if st == "active" and s["active_box"] else _rgba(s["word_box"])
                 if box:
                     od.rounded_rectangle([cx - self.pad // 2, y - self.pad // 3, cx + tw + self.pad // 2, y + line_h - 8],
                                          radius=10, fill=box)
@@ -142,20 +188,27 @@ class CaptionRenderer:
             row_w = sum(widths) + self.space * (len(r) - 1)
             x = (self.W - row_w) // 2
             for w, tw in zip(r, widths):
-                active = w["virtual_start"] <= t <= w["virtual_end"]
+                st = self._state(w, t)
                 txt = self._txt(w)
-                pop = _pop_scale(t, w) if (active and self.s.get("animate")) else 1.0
-                if pop > 1.001:
-                    self._draw_word_pop(img, x, y, tw, txt, pop)
+                tr = None
+                if st == "active":
+                    anim = self.s.get("animation", "none")
+                    dur = min(ANIM_DUR, (w["virtual_end"] - w["virtual_start"]) * 0.8) or ANIM_DUR
+                    scale, dx, dy, alpha = word_anim(anim, t - w["virtual_start"], dur, self.s["fontsize"])
+                    if abs(scale - 1) > 1e-3 or dx or dy or alpha < 0.999:
+                        tr = (scale, dx, dy, alpha)
+                if tr:
+                    self._draw_word_tile(img, x, y, tw, txt, *tr)
                 else:
-                    self._draw_word(img, d, x, y, txt, active)
+                    self._draw_word(img, d, x, y, txt, st)
                 x += tw + self.space
             y += line_h
         return np.asarray(img.convert("RGB"))[:, :, ::-1].copy()
 
-    def _draw_word_pop(self, img, x, y, tw, txt, scale):
-        """Render the active word to a tile, scale it, and composite centred on
-        its slot — the pop frames. Outline + primary fill (parity with preview)."""
+    def _draw_word_tile(self, img, x, y, tw, txt, scale, dx, dy, alpha):
+        """Render the active word to a tile and composite it with a motion
+        transform (scale + offset + alpha) centred on its slot. Outline + primary
+        fill — parity with the preview's wordAnim path."""
         s = self.s
         ow = int(s["outline_width"])
         oc = _rgba(s["outline_color"])[:3]
@@ -166,14 +219,22 @@ class CaptionRenderer:
         tile = Image.new("RGBA", (gw + pad * 2, gh + pad * 2), (0, 0, 0, 0))
         stroke = {"stroke_width": ow, "stroke_fill": oc} if ow > 0 else {}
         ImageDraw.Draw(tile).text((pad - bb[0], pad - bb[1]), txt, font=self.font, fill=fill, **stroke)
-        nw, nh = max(1, int(tile.width * scale)), max(1, int(tile.height * scale))
-        tile = tile.resize((nw, nh), Image.LANCZOS)
-        cx = x + tw / 2
-        cy = y + (bb[1] + bb[3]) / 2  # vertical centre of the glyph at draw y
-        img.alpha_composite(tile, (int(cx - nw / 2), int(cy - nh / 2)))
+        if abs(scale - 1) > 1e-3:
+            nw, nh = max(1, int(tile.width * scale)), max(1, int(tile.height * scale))
+            tile = tile.resize((nw, nh), Image.LANCZOS)
+        if alpha < 0.999:
+            tile.putalpha(tile.getchannel("A").point(lambda v: int(v * max(0.0, alpha))))
+        cx = x + tw / 2 + dx
+        cy = y + (bb[1] + bb[3]) / 2 + dy  # vertical centre of the glyph at draw y
+        img.alpha_composite(tile, (int(cx - tile.width / 2), int(cy - tile.height / 2)))
 
-    def _draw_word(self, img, d, x, y, txt, active):
+    def _draw_word(self, img, d, x, y, txt, state):
         s = self.s
+        active = state == "active"
+        # "past" (build) and "line" words are confirmed text -> primary colour;
+        # only "upcoming" (highlight mode) is dimmed. Emphasis (glow/gradient) is
+        # reserved for the active word.
+        bright = state in ("active", "past", "line")
         ow = int(s["outline_width"])
         oc = _rgba(s["outline_color"])[:3]
         stroke = {"stroke_width": ow, "stroke_fill": oc} if ow > 0 else {}
@@ -188,7 +249,7 @@ class CaptionRenderer:
                 d.text((x, y), txt, font=self.font, fill=oc, **stroke)
             self._gradient_word(img, x, y, txt, s["gradient"])
         else:
-            fill = (_rgba(s["primary"]) if active else _rgba(s["upcoming"]))[:3]
+            fill = (_rgba(s["primary"]) if bright else _rgba(s["upcoming"]))[:3]
             d.text((x, y), txt, font=self.font, fill=fill, **stroke)
 
     def _gradient_word(self, img, x, y, txt, grad):

@@ -1,6 +1,28 @@
 import { useEffect, useState } from "react";
 import { CAPTION_PRESETS, PRESET_NAMES } from "../presets.js";
 
+// Reveal types (how words appear over time) — the Descript/Veed "caption type"
+// axis, independent of the colour preset below.
+const REVEAL_TYPES = [
+  { id: "highlight", label: "Highlight", desc: "Line shows; the spoken word lights up (karaoke)." },
+  { id: "build", label: "Word build", desc: "Words appear one by one as they're spoken." },
+  { id: "word", label: "One word", desc: "A single big word at a time (TikTok-style)." },
+  { id: "line", label: "Clean line", desc: "The whole line, steady — no per-word emphasis." },
+];
+
+// Per-word motion (mirrors Veed's named animations). Composes with any type + style.
+const MOTIONS = [
+  { id: "none", label: "None" },
+  { id: "pop", label: "Pop" },
+  { id: "bounce", label: "Bounce" },
+  { id: "scale_in", label: "Scale in" },
+  { id: "float_in", label: "Float up" },
+  { id: "drop_in", label: "Drop in" },
+  { id: "slide_in", label: "Slide in" },
+  { id: "stomp", label: "Stomp" },
+  { id: "pulse", label: "Pulse" },
+];
+
 const LABELS = {
   hormozi: "Hormozi", beast: "Beast", karaoke: "Karaoke", boxed: "Boxed",
   tiktok: "TikTok", neon: "Neon", bold_pop: "Bold Pop", clean: "Clean",
@@ -39,10 +61,30 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
   const q = lang ? `?lang=${lang}` : "";
   const suffix = lang ? `.${lang}` : "";
 
+  const reveal = cap.reveal || "highlight";
+  const motion = cap.animation || (cap.animate ? "pop" : "none");
+
   return (
     <div className="panel">
       <h3>Captions</h3>
-      <p className="panel-sub">Pick a style — it updates the preview live.</p>
+      <p className="panel-sub">Pick how words appear, then a style — both update the preview live.</p>
+
+      <span className="cap-dl-label">Animation type</span>
+      <div className="reveal-grid">
+        {REVEAL_TYPES.map((r) => (
+          <button
+            key={r.id}
+            className={"reveal-card" + (reveal === r.id ? " on" : "")}
+            onClick={() => setSettings({ caption: { reveal: r.id } })}
+            title={r.desc}
+          >
+            <span className="reveal-name">{r.label}</span>
+            <span className="reveal-desc">{r.desc}</span>
+          </button>
+        ))}
+      </div>
+
+      <span className="cap-dl-label">Style</span>
       <div className="cap-grid">
         {PRESET_NAMES.map((name) => (
           <button
@@ -76,17 +118,19 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
         </select>
       </div>
 
-      <button
-        className={"toggle-row" + (cap.animate ? " on" : "")}
-        onClick={() => setSettings({ caption: { animate: !cap.animate } })}
-        aria-pressed={!!cap.animate}
-      >
-        <span className="toggle-text">
-          <span className="toggle-title">Animate words</span>
-          <span className="toggle-desc">Each word pops as it's spoken</span>
-        </span>
-        <span className={"switch" + (cap.animate ? " on" : "")} aria-hidden><span className="switch-knob" /></span>
-      </button>
+      <span className="cap-dl-label">Motion</span>
+      <div className="motion-grid">
+        {MOTIONS.map((m) => (
+          <button
+            key={m.id}
+            className={"motion-chip" + (motion === m.id ? " on" : "")}
+            onClick={() => setSettings({ caption: { animation: m.id } })}
+            title={`${m.label} — animates the spoken word`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
 
       <div className="panel-row">
         <label>Language</label>

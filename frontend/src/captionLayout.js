@@ -23,15 +23,25 @@ export function groupLines(words, maxWords = 4, maxGap = 0.7) {
   }));
 }
 
-// Word-pop: the active word scales up for the first POP_DUR of its window,
-// easing back to 1.0. Shared shape with the backend Pillow renderer so the
-// preview matches the export.
-const POP_DUR = 0.18;
-const POP_AMOUNT = 0.3;
-export function popScale(t, w) {
-  const e = t - w.virtualStart;
-  if (e < 0 || e > POP_DUR) return 1;
-  return 1 + POP_AMOUNT * (1 - e / POP_DUR);
+// Per-word motion for the active word — mirror of backend captions.word_anim so
+// the preview matches the export. Returns {scale, dx, dy, alpha}.
+const ANIM_DUR = 0.25;
+export function wordAnim(name, e, dur, fs) {
+  if (!name || name === "none") return { scale: 1, dx: 0, dy: 0, alpha: 1 };
+  if (name === "pulse") return { scale: 1 + 0.05 * Math.sin((2 * Math.PI * e) / 0.7), dx: 0, dy: 0, alpha: 1 };
+  const p = dur > 0 ? e / dur : 1;
+  if (p < 0 || p > 1) return { scale: 1, dx: 0, dy: 0, alpha: 1 };
+  const q = 1 - p;
+  switch (name) {
+    case "pop": return { scale: 1 + 0.3 * q, dx: 0, dy: 0, alpha: 1 };
+    case "bounce": return { scale: 1 + 0.35 * Math.sin(Math.PI * p), dx: 0, dy: 0, alpha: 1 };
+    case "scale_in": return { scale: 0.4 + 0.6 * p, dx: 0, dy: 0, alpha: p };
+    case "float_in": return { scale: 1, dx: 0, dy: 0.55 * fs * q, alpha: p };
+    case "drop_in": return { scale: 1, dx: 0, dy: -0.55 * fs * q, alpha: p };
+    case "slide_in": return { scale: 1, dx: 0.6 * fs * q, dy: 0, alpha: p };
+    case "stomp": return { scale: 1 + 0.8 * q * q, dx: 0, dy: 0, alpha: Math.min(1, 0.5 + 0.5 * p) };
+    default: return { scale: 1, dx: 0, dy: 0, alpha: 1 };
+  }
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -44,10 +54,27 @@ function roundRect(ctx, x, y, w, h, r) {
   }
 }
 
+// Reveal type mirrors backend/captions.py: which words show and how they colour.
+function wordVisible(w, t, reveal) {
+  if (reveal === "word") return t >= w.virtualStart && t <= w.virtualEnd;
+  if (reveal === "build") return t >= w.virtualStart;
+  return true; // highlight, line
+}
+function wordState(w, t, reveal) {
+  if (reveal === "line") return "line";
+  if (t >= w.virtualStart && t <= w.virtualEnd) return "active";
+  if (reveal === "build") return "past";
+  if (reveal === "word") return "active";
+  return "upcoming";
+}
+
 // Draw the caption active at virtual time t. `style` keys mirror presets.py.
 export function drawCaptions(ctx, lines, t, W, H, style) {
   const line = lines.find((l) => t >= l.start && t <= l.end);
   if (!line) return;
+  const reveal = style.reveal || "highlight";
+  const shown = line.words.filter((w) => wordVisible(w, t, reveal));
+  if (!shown.length) return;
   const fs = style.fontsize;
   const txt = (w) => (style.uppercase ? w.word.trim().toUpperCase() : w.word.trim());
 
@@ -60,7 +87,7 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
   // wrap
   const rows = [];
   let row = [], rowW = 0;
-  for (const w of line.words) {
+  for (const w of shown) {
     const tw = ctx.measureText(txt(w)).width;
     const add = tw + (row.length ? space : 0);
     if (row.length && rowW + add > maxW) {
@@ -92,8 +119,8 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
     // boxes
     let bx = x;
     r.forEach((w, i) => {
-      const active = t >= w.virtualStart && t <= w.virtualEnd;
-      const box = active && style.active_box ? style.active_box : style.word_box;
+      const st = wordState(w, t, reveal);
+      const box = st === "active" && style.active_box ? style.active_box : style.word_box;
       if (box) {
         ctx.fillStyle = box;
         roundRect(ctx, bx - pad / 2, y, widths[i] + pad, lineH - 6, 8);
@@ -102,19 +129,21 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
     });
     // text
     r.forEach((w, i) => {
-      const active = t >= w.virtualStart && t <= w.virtualEnd;
+      const st = wordState(w, t, reveal);
+      const active = st === "active";
+      const bright = st === "active" || st === "past" || st === "line";
       const s = txt(w);
       ctx.save();
-      // word-pop: scale the active glyph around its centre
-      if (style.animate && active) {
-        const pop = popScale(t, w);
-        if (pop !== 1) {
-          const cx = x + widths[i] / 2;
-          const cy = y + fs / 2;
-          ctx.translate(cx, cy);
-          ctx.scale(pop, pop);
-          ctx.translate(-cx, -cy);
-        }
+      // active-word motion (scale / offset / fade) around its centre
+      if (active && style.animation && style.animation !== "none") {
+        const dur = Math.min(ANIM_DUR, (w.virtualEnd - w.virtualStart) * 0.8) || ANIM_DUR;
+        const a = wordAnim(style.animation, t - w.virtualStart, dur, fs);
+        const cx = x + widths[i] / 2;
+        const cy = y + fs / 2;
+        ctx.translate(cx + a.dx, cy + a.dy);
+        ctx.scale(a.scale, a.scale);
+        ctx.translate(-cx, -cy);
+        ctx.globalAlpha = a.alpha;
       }
       if (style.glow && active) {
         ctx.shadowColor = style.glow;
@@ -132,7 +161,7 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
         g.addColorStop(1, style.gradient[1]);
         ctx.fillStyle = g;
       } else {
-        ctx.fillStyle = active ? style.primary : style.upcoming;
+        ctx.fillStyle = bright ? style.primary : style.upcoming;
       }
       ctx.fillText(s, x, y);
       ctx.restore();

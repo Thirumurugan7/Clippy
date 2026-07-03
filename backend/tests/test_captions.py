@@ -1,6 +1,6 @@
 import numpy as np
 
-from backend.captions import CaptionRenderer, _pop_scale
+from backend.captions import CaptionRenderer, word_anim
 from backend.presets import resolve_caption_style
 
 WORDS = [
@@ -38,20 +38,92 @@ def test_no_caption_when_outside_time():
     assert out.sum() == 0  # nothing active -> untouched black frame
 
 
-def test_pop_scale_curve():
-    w = {"word": "x", "virtual_start": 1.0, "virtual_end": 2.0}
-    assert _pop_scale(1.0, w) > 1.2          # biggest right at activation
-    assert _pop_scale(1.0, w) > _pop_scale(1.1, w)  # eases down
-    assert _pop_scale(1.5, w) == 1.0         # settled after POP_DUR
-    assert _pop_scale(0.5, w) == 1.0         # not yet active
+def test_word_anim_none_is_identity():
+    assert word_anim("none", 0.1, 0.25, 58) == (1.0, 0.0, 0.0, 1.0)
 
 
-def test_animate_renders_popped_word():
-    # animate=True must still produce a valid frame (popped-word render path)
+def test_word_anim_pop_biggest_at_start_then_settles():
+    dur, fs = 0.25, 58
+    s0 = word_anim("pop", 0.0, dur, fs)[0]
+    s_mid = word_anim("pop", 0.12, dur, fs)[0]
+    assert s0 > 1.25 and s0 > s_mid          # biggest at activation, eases down
+    assert word_anim("pop", 0.3, dur, fs) == (1.0, 0.0, 0.0, 1.0)  # settled after dur
+
+
+def test_word_anim_entrances_move_and_fade():
+    dur, fs = 0.25, 58
+    # float rises (dy>0 -> settles to 0), drop falls (dy<0), slide from right (dx>0)
+    assert word_anim("float_in", 0.0, dur, fs)[2] > 0
+    assert word_anim("drop_in", 0.0, dur, fs)[2] < 0
+    assert word_anim("slide_in", 0.0, dur, fs)[1] > 0
+    # scale_in grows from small and fades in
+    sc, _, _, al = word_anim("scale_in", 0.0, dur, fs)
+    assert sc < 0.5 and al == 0.0
+    # all entrances resolve to identity once settled
+    for name in ("float_in", "drop_in", "slide_in", "scale_in", "stomp", "bounce"):
+        assert word_anim(name, dur + 0.01, dur, fs) == (1.0, 0.0, 0.0, 1.0)
+
+
+def test_word_anim_pulse_is_continuous():
+    # pulse never "settles" — it keeps oscillating around 1.0 while active
+    dur, fs = 0.25, 58
+    a = word_anim("pulse", 1.0, dur, fs)[0]
+    assert 0.9 < a < 1.1
+
+
+def test_animation_renders_a_frame():
+    for name in ("pop", "float_in", "stomp", "pulse"):
+        style = resolve_caption_style({"preset": "beast", "animation": name})
+        assert style["animation"] == name
+        r = CaptionRenderer(WORDS, width=1080, height=1920, style=style)
+        out = r.draw(np.zeros((1920, 1080, 3), np.uint8), 0.02)  # word 1 just active
+        assert out.shape == (1920, 1080, 3) and out.sum() > 0
+
+
+def test_legacy_animate_flag_maps_to_pop():
     style = resolve_caption_style({"preset": "beast", "animate": True})
-    assert style["animate"] is True
-    r = CaptionRenderer(WORDS, width=1080, height=1920, style=style)
-    out = r.draw(np.zeros((1920, 1080, 3), np.uint8), 0.02)  # just after word 1 activates
+    assert style["animation"] == "pop" and style["animate"] is True
+
+
+def _reveal_renderer(reveal):
+    style = resolve_caption_style({"preset": "karaoke", "reveal": reveal})
+    return CaptionRenderer(WORDS, width=1080, height=1920, style=style)
+
+
+def test_reveal_unknown_falls_back_to_highlight():
+    assert resolve_caption_style({"reveal": "nope"})["reveal"] == "highlight"
+    assert resolve_caption_style({"reveal": "word"})["reveal"] == "word"
+
+
+def test_reveal_word_shows_only_active_word():
+    r = _reveal_renderer("word")  # WORDS: hello[0,1], world[1,2]
+    assert r._visible(WORDS[0], 0.5) and not r._visible(WORDS[1], 0.5)
+    assert not r._visible(WORDS[0], 1.5) and r._visible(WORDS[1], 1.5)
+    assert r._state(WORDS[0], 0.5) == "active"
+
+
+def test_reveal_build_accumulates_then_stays():
+    r = _reveal_renderer("build")
+    assert r._visible(WORDS[0], 0.5) and not r._visible(WORDS[1], 0.5)   # world not started
+    assert r._visible(WORDS[0], 1.5) and r._visible(WORDS[1], 1.5)        # both now shown
+    assert r._state(WORDS[0], 1.5) == "past"     # already spoken, stays bright
+    assert r._state(WORDS[1], 1.5) == "active"
+
+
+def test_reveal_line_is_static_uniform():
+    r = _reveal_renderer("line")
+    assert r._visible(WORDS[0], 0.5) and r._visible(WORDS[1], 0.5)
+    assert r._state(WORDS[0], 0.5) == "line" and r._state(WORDS[1], 0.5) == "line"
+
+
+def test_reveal_highlight_dims_non_active():
+    r = _reveal_renderer("highlight")
+    assert r._state(WORDS[0], 0.5) == "active"
+    assert r._state(WORDS[1], 0.5) == "upcoming"
+
+
+def test_reveal_word_renders_a_frame():
+    out = _reveal_renderer("word").draw(np.zeros((1920, 1080, 3), np.uint8), 0.5)
     assert out.shape == (1920, 1080, 3) and out.sum() > 0
 
 

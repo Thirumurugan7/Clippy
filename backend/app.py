@@ -27,7 +27,7 @@ from . import auth, config, db
 from .edl import validate_edl, project_words
 from .fillers import detect_fillers
 from .silences import detect_silences, total_silence
-from .presets import ASPECTS, CAPTION_PRESETS
+from .presets import ASPECTS, CAPTION_PRESETS, REVEALS, ANIMATIONS
 from .subtitles import group_cues, cues_to_srt, cues_to_vtt
 from .subtitle_edit import replace_cue_words
 from .translate import translate_cues, LANGUAGES
@@ -704,6 +704,12 @@ def put_settings(video_id: str, body: SettingsBody) -> dict:
     lang = body.caption.get("language")
     if lang and lang not in LANGUAGES:
         raise HTTPException(status_code=400, detail=f"unknown caption language {lang}")
+    reveal = body.caption.get("reveal")
+    if reveal and reveal not in REVEALS:
+        raise HTTPException(status_code=400, detail=f"unknown caption reveal type {reveal}")
+    anim = body.caption.get("animation")
+    if anim and anim not in ANIMATIONS:
+        raise HTTPException(status_code=400, detail=f"unknown caption animation {anim}")
     db.save_settings(video_id, json.dumps(body.model_dump()))
     return {"ok": True}
 

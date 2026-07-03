@@ -58,3 +58,35 @@ def test_put_accepts_known_caption_language():
                         caption={"preset": "karaoke", "language": "es"})
     assert put_settings(vid, body) == {"ok": True}
     assert get_settings(vid)["caption"]["language"] == "es"
+
+
+def test_put_rejects_bad_reveal():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "reveal": "bogus"})
+    with pytest.raises(HTTPException):
+        put_settings(vid, body)
+
+
+def test_put_accepts_reveal_type():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "reveal": "word"})
+    assert put_settings(vid, body) == {"ok": True}
+    assert get_settings(vid)["caption"]["reveal"] == "word"
+
+
+def test_put_rejects_bad_animation():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "animation": "wobble"})
+    with pytest.raises(HTTPException):
+        put_settings(vid, body)
+
+
+def test_put_accepts_animation():
+    vid = _vid()
+    body = SettingsBody(aspect="9:16", framing="auto", crop_cx=0.5,
+                        caption={"preset": "karaoke", "animation": "stomp"})
+    assert put_settings(vid, body) == {"ok": True}
+    assert get_settings(vid)["caption"]["animation"] == "stomp"

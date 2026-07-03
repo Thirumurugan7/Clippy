@@ -43,6 +43,14 @@ export const CAPTION_PRESETS = {
 export const DEFAULT_PRESET = "karaoke";
 export const PRESET_NAMES = Object.keys(CAPTION_PRESETS);
 
+// Reveal type = how words appear over time (mirror of presets.py REVEALS).
+export const REVEALS = ["highlight", "build", "word", "line"];
+export const DEFAULT_REVEAL = "highlight";
+
+// Per-word motion (mirror of presets.py ANIMATIONS).
+export const ANIMATIONS = ["none", "pop", "bounce", "scale_in", "float_in", "drop_in", "slide_in", "stomp", "pulse"];
+export const DEFAULT_ANIMATION = "none";
+
 export function resolveCaptionStyle(caption) {
   caption = caption || {};
   const preset = caption.preset || DEFAULT_PRESET;
@@ -50,6 +58,10 @@ export function resolveCaptionStyle(caption) {
   if (caption.fontsize) style.fontsize = caption.fontsize;
   if (caption.color) style.primary = caption.color;
   if (caption.position) style.position = caption.position;
-  style.animate = !!caption.animate;
+  style.reveal = REVEALS.includes(caption.reveal) ? caption.reveal : DEFAULT_REVEAL;
+  let anim = caption.animation;
+  if (anim == null) anim = caption.animate ? "pop" : DEFAULT_ANIMATION; // legacy fallback
+  style.animation = ANIMATIONS.includes(anim) ? anim : DEFAULT_ANIMATION;
+  style.animate = style.animation !== "none";
   return style;
 }
