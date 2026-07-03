@@ -77,10 +77,27 @@ def project_words(segments: list[dict], words: list[dict], min_keep_ratio: float
             overlap = oend - ostart
             wlen = max(w["end"] - w["start"], 1e-6)
             if overlap > 0 and overlap / wlen >= min_keep_ratio:
-                out.append({
+                pw = {
                     "word": w["word"],
                     "virtual_start": acc + (ostart - a),
                     "virtual_end": acc + (oend - a),
-                })
+                }
+                if w.get("speaker") is not None:  # carry diarized speaker through
+                    pw["speaker"] = w["speaker"]
+                out.append(pw)
         acc += seg_len
     return out
+
+
+def attach_speakers(words: list[dict], segments: list[dict]) -> list[dict]:
+    """Tag each transcript word with its diarized speaker (from segment word
+    ranges), so per-speaker caption colour survives projection. No-op if the
+    transcript hasn't been diarized."""
+    for seg in segments:
+        spk = seg.get("speaker")
+        if spk is None:
+            continue
+        for i in range(int(seg.get("word_start", 0)), int(seg.get("word_end", 0))):
+            if 0 <= i < len(words):
+                words[i]["speaker"] = spk
+    return words

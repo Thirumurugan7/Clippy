@@ -450,6 +450,15 @@ button:focus-visible { outline: none; box-shadow: var(--ring); }
 .cap-dl-row a.btn-use { text-decoration: none; padding: 6px 16px; }
 .cap-dl-hint { color: var(--faint); margin: 0; line-height: 1.5; }
 
+/* publish panel */
+.pub-copy { margin-top: 8px; }
+.pub-fields { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.pub-field { display: flex; flex-direction: column; gap: 3px; text-align: left; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 11px; cursor: pointer; transition: border-color .14s, background .14s; }
+.pub-field:hover { border-color: var(--accent); background: var(--accent-soft); }
+.pub-field-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+.pub-field-val { font-size: var(--t-base); color: var(--text); line-height: 1.4; }
+.pub-tags { color: var(--accent-3); font-weight: 550; }
+
 /* text overlays (Overlays panel) */
 .ov-text-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .ov-add { padding: 5px 12px; }

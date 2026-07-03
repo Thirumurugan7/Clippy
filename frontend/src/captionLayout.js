@@ -68,6 +68,20 @@ function wordState(w, t, reveal) {
   return "upcoming";
 }
 
+// Mirror of backend captions.SPEAKER_PALETTE / is_keyword / _word_fill.
+const SPEAKER_PALETTE = ["#8b6cf6", "#f6a04d", "#4dd0e1", "#e05d8f", "#7bc86c", "#d7c04d"];
+const STOPWORDS = new Set(["the","and","for","are","but","not","you","your","with","that","this","have","has","had","was","were","will","would","they","them","then","than","from","into","just","like","what","when","where","which","there","their","about","been","some","such","only","over","also","these","those","here","very","much","more","most","each","onto","upon","because","while","gonna","wanna","kind","sort"]);
+function isKeyword(word) {
+  const t = (word || "").toLowerCase().replace(/[^\w']/g, "");
+  return t.length >= 4 && !STOPWORDS.has(t);
+}
+function wordFill(style, w, state) {
+  if (state === "active") return style.primary;
+  if (style.emphasis && isKeyword(w.word)) return style.emphasis_color;
+  if (style.speaker_colors && w.speaker != null) return SPEAKER_PALETTE[w.speaker % SPEAKER_PALETTE.length];
+  return state === "past" || state === "line" ? style.primary : style.upcoming;
+}
+
 // Draw the caption active at virtual time t. `style` keys mirror presets.py.
 export function drawCaptions(ctx, lines, t, W, H, style) {
   const line = lines.find((l) => t >= l.start && t <= l.end);
@@ -78,7 +92,7 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
   const fs = style.fontsize;
   const txt = (w) => (style.uppercase ? w.word.trim().toUpperCase() : w.word.trim());
 
-  ctx.font = `700 ${fs}px "DejaVu Sans", Arial, sans-serif`;
+  ctx.font = `700 ${fs}px ${style.font_family || '"DejaVu Sans", Arial, sans-serif'}`;
   ctx.textBaseline = "top";
   const space = ctx.measureText(" ").width;
   const pad = Math.max(6, fs * 0.22);
@@ -131,7 +145,6 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
     r.forEach((w, i) => {
       const st = wordState(w, t, reveal);
       const active = st === "active";
-      const bright = st === "active" || st === "past" || st === "line";
       const s = txt(w);
       ctx.save();
       // active-word motion (scale / offset / fade) around its centre
@@ -161,7 +174,7 @@ export function drawCaptions(ctx, lines, t, W, H, style) {
         g.addColorStop(1, style.gradient[1]);
         ctx.fillStyle = g;
       } else {
-        ctx.fillStyle = bright ? style.primary : style.upcoming;
+        ctx.fillStyle = wordFill(style, w, st);
       }
       ctx.fillText(s, x, y);
       ctx.restore();

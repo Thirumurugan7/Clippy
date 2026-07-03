@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CAPTION_PRESETS, PRESET_NAMES } from "../presets.js";
+import { CAPTION_PRESETS, PRESET_NAMES, FONTS } from "../presets.js";
 
 // Reveal types (how words appear over time) — the Descript/Veed "caption type"
 // axis, independent of the colour preset below.
@@ -99,6 +99,13 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
       </div>
 
       <div className="panel-row">
+        <label>Font</label>
+        <select value={cap.font || "default"}
+          onChange={(e) => setSettings({ caption: { font: e.target.value } })}>
+          {FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+      </div>
+      <div className="panel-row">
         <label>Size</label>
         <input type="range" min="36" max="92" value={cap.fontsize || 58}
           onChange={(e) => setSettings({ caption: { fontsize: Number(e.target.value) } })} />
@@ -131,6 +138,36 @@ export function CaptionsPanel({ settings, setSettings, videoId }) {
           </button>
         ))}
       </div>
+
+      <button
+        className={"toggle-row" + (cap.emphasis ? " on" : "")}
+        onClick={() => setSettings({ caption: { emphasis: !cap.emphasis } })}
+        aria-pressed={!!cap.emphasis}
+      >
+        <span className="toggle-text">
+          <span className="toggle-title">Emphasize keywords</span>
+          <span className="toggle-desc">Colour the punchy words so they pop</span>
+        </span>
+        <span className={"switch" + (cap.emphasis ? " on" : "")} aria-hidden><span className="switch-knob" /></span>
+      </button>
+      {cap.emphasis && (
+        <div className="panel-row">
+          <label>Keyword colour</label>
+          <input type="color" value={cap.emphasis_color || "#ffd400"}
+            onChange={(e) => setSettings({ caption: { emphasis_color: e.target.value } })} />
+        </div>
+      )}
+      <button
+        className={"toggle-row" + (cap.speaker_colors ? " on" : "")}
+        onClick={() => setSettings({ caption: { speaker_colors: !cap.speaker_colors } })}
+        aria-pressed={!!cap.speaker_colors}
+      >
+        <span className="toggle-text">
+          <span className="toggle-title">Colour by speaker</span>
+          <span className="toggle-desc">Each speaker gets their own caption colour (run Detect speakers first)</span>
+        </span>
+        <span className={"switch" + (cap.speaker_colors ? " on" : "")} aria-hidden><span className="switch-knob" /></span>
+      </button>
 
       <div className="panel-row">
         <label>Language</label>

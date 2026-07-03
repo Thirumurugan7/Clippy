@@ -31,6 +31,27 @@ def _rgba(h):
 
 
 import math
+import re
+
+# Distinct, readable per-speaker caption colours (mirror frontend SPEAKER_COLORS).
+SPEAKER_PALETTE = ["#8b6cf6", "#f6a04d", "#4dd0e1", "#e05d8f", "#7bc86c", "#d7c04d"]
+
+# Keyword emphasis: recolour meaningful content words (Veed "AI Emphasis").
+# Deterministic + offline — a content word is 4+ chars and not a common stopword.
+_STOPWORDS = {
+    "the", "and", "for", "are", "but", "not", "you", "your", "with", "that",
+    "this", "have", "has", "had", "was", "were", "will", "would", "they", "them",
+    "then", "than", "from", "into", "just", "like", "what", "when", "where",
+    "which", "there", "their", "about", "been", "some", "such", "only", "over",
+    "also", "these", "those", "here", "very", "much", "more", "most", "each",
+    "onto", "upon", "because", "while", "gonna", "wanna", "kind", "sort",
+}
+
+
+def is_keyword(word: str) -> bool:
+    t = re.sub(r"[^\w']", "", (word or "").lower())
+    return len(t) >= 4 and t not in _STOPWORDS
+
 
 # Per-word motion. Each returns (scale, dx, dy, alpha) for the active word at
 # elapsed time `e` (seconds since it became active), over a `dur`-second entrance.
@@ -200,7 +221,7 @@ class CaptionRenderer:
                 if tr:
                     self._draw_word_tile(img, x, y, tw, txt, *tr)
                 else:
-                    self._draw_word(img, d, x, y, txt, st)
+                    self._draw_word(img, d, x, y, txt, st, w)
                 x += tw + self.space
             y += line_h
         return np.asarray(img.convert("RGB"))[:, :, ::-1].copy()
@@ -228,13 +249,19 @@ class CaptionRenderer:
         cy = y + (bb[1] + bb[3]) / 2 + dy  # vertical centre of the glyph at draw y
         img.alpha_composite(tile, (int(cx - tile.width / 2), int(cy - tile.height / 2)))
 
-    def _draw_word(self, img, d, x, y, txt, state):
+    def _word_fill(self, w, state):
+        """Non-active word colour, with keyword-emphasis and per-speaker overrides
+        layered over the base bright/dim colour."""
+        s = self.s
+        if s.get("emphasis") and is_keyword(w["word"]):
+            return s["emphasis_color"]
+        if s.get("speaker_colors") and w.get("speaker") is not None:
+            return SPEAKER_PALETTE[int(w["speaker"]) % len(SPEAKER_PALETTE)]
+        return s["primary"] if state in ("past", "line") else s["upcoming"]
+
+    def _draw_word(self, img, d, x, y, txt, state, w):
         s = self.s
         active = state == "active"
-        # "past" (build) and "line" words are confirmed text -> primary colour;
-        # only "upcoming" (highlight mode) is dimmed. Emphasis (glow/gradient) is
-        # reserved for the active word.
-        bright = state in ("active", "past", "line")
         ow = int(s["outline_width"])
         oc = _rgba(s["outline_color"])[:3]
         stroke = {"stroke_width": ow, "stroke_fill": oc} if ow > 0 else {}
@@ -249,8 +276,8 @@ class CaptionRenderer:
                 d.text((x, y), txt, font=self.font, fill=oc, **stroke)
             self._gradient_word(img, x, y, txt, s["gradient"])
         else:
-            fill = (_rgba(s["primary"]) if bright else _rgba(s["upcoming"]))[:3]
-            d.text((x, y), txt, font=self.font, fill=fill, **stroke)
+            hexc = s["primary"] if active else self._word_fill(w, state)
+            d.text((x, y), txt, font=self.font, fill=_rgba(hexc)[:3], **stroke)
 
     def _gradient_word(self, img, x, y, txt, grad):
         bb = self.font.getbbox(txt)

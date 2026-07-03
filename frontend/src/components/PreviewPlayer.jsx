@@ -62,6 +62,7 @@ export const PreviewPlayer = forwardRef(function PreviewPlayer(
     },
     play() { videoRef.current?.play(); },
     pause() { videoRef.current?.pause(); },
+    toggle() { const v = videoRef.current; if (v) v.paused ? v.play() : v.pause(); },
   }));
 
   useEffect(() => {

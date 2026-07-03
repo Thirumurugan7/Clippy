@@ -71,7 +71,8 @@ def parse_highlights(raw: str, duration: float) -> list[dict]:
             "reason": str(c.get("reason", "")).strip(),
             "score": round(float(score), 3) if score is not None else None,
         })
-    out.sort(key=lambda x: x["start"])
+    # Rank by virality score (strongest hook first), like Opus Clip / Klap.
+    out.sort(key=lambda x: (x["score"] if x["score"] is not None else -1), reverse=True)
     return out
 
 

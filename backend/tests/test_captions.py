@@ -85,6 +85,49 @@ def test_legacy_animate_flag_maps_to_pop():
     assert style["animation"] == "pop" and style["animate"] is True
 
 
+def test_is_keyword():
+    from backend.captions import is_keyword
+    assert is_keyword("crazy") and is_keyword("JLPT")
+    assert not is_keyword("the") and not is_keyword("a") and not is_keyword("and")
+
+
+def test_emphasis_recolours_keywords():
+    style = resolve_caption_style({"preset": "karaoke", "emphasis": True, "emphasis_color": "#ff0000"})
+    r = CaptionRenderer(WORDS, width=1080, height=1920, style=style)
+    kw = {"word": "crazy", "virtual_start": 5, "virtual_end": 6}
+    stop = {"word": "the", "virtual_start": 5, "virtual_end": 6}
+    assert r._word_fill(kw, "upcoming") == "#ff0000"        # keyword -> emphasis colour
+    assert r._word_fill(stop, "upcoming") == style["upcoming"]  # stopword -> normal
+
+
+def test_speaker_colours_pick_from_palette():
+    from backend.captions import SPEAKER_PALETTE
+    style = resolve_caption_style({"preset": "karaoke", "speaker_colors": True})
+    r = CaptionRenderer(WORDS, width=1080, height=1920, style=style)
+    w0 = {"word": "hi", "virtual_start": 5, "virtual_end": 6, "speaker": 0}
+    w1 = {"word": "hi", "virtual_start": 5, "virtual_end": 6, "speaker": 1}
+    assert r._word_fill(w0, "past") == SPEAKER_PALETTE[0]
+    assert r._word_fill(w1, "past") == SPEAKER_PALETTE[1]
+
+
+def test_font_resolves_family_and_optional_file():
+    from backend.presets import FONTS
+    st = resolve_caption_style({"font": "impact"})
+    assert st["font_family"].startswith("Impact")
+    assert "impact" in FONTS
+    # unknown font falls back cleanly
+    assert resolve_caption_style({"font": "nope"})["font_family"] == FONTS["default"]["family"]
+
+
+def test_project_words_carries_speaker():
+    from backend.edl import project_words, attach_speakers
+    words = [{"word": "a", "start": 0.0, "end": 0.5}, {"word": "b", "start": 0.5, "end": 1.0}]
+    segs = [{"word_start": 0, "word_end": 1, "speaker": 0}, {"word_start": 1, "word_end": 2, "speaker": 1}]
+    attach_speakers(words, segs)
+    proj = project_words([{"sourceStart": 0.0, "sourceEnd": 1.0}], words)
+    assert proj[0]["speaker"] == 0 and proj[1]["speaker"] == 1
+
+
 def _reveal_renderer(reveal):
     style = resolve_caption_style({"preset": "karaoke", "reveal": reveal})
     return CaptionRenderer(WORDS, width=1080, height=1920, style=style)

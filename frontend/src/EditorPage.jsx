@@ -15,6 +15,7 @@ import { AiEditPanel } from "./components/AiEditPanel.jsx";
 import { AudioPanel } from "./components/AudioPanel.jsx";
 import { BackgroundPanel } from "./components/BackgroundPanel.jsx";
 import { SubtitleEditor } from "./components/SubtitleEditor.jsx";
+import { PublishPanel } from "./components/PublishPanel.jsx";
 import { OverlaysPanel } from "./components/OverlaysPanel.jsx";
 
 export function EditorPage({ videoId }) {
@@ -62,6 +63,10 @@ const TOOL_GROUPS = [
     label: "Sound",
     tools: [{ id: "audio", label: "Audio", icon: "waveform" }],
   },
+  {
+    label: "Publish",
+    tools: [{ id: "publish", label: "Publish", icon: "upload" }],
+  },
 ];
 
 function EditorInner({ videoId, duration }) {
@@ -81,7 +86,14 @@ function EditorInner({ videoId, duration }) {
 
   const captionLines = useMemo(() => {
     if (!transcript || !edl) return [];
-    return groupLines(projectWords(edl, transcript.words));
+    // Tag words with their diarized speaker (from segment ranges) so per-speaker
+    // caption colour shows in the preview the same way it burns into the export.
+    const words = transcript.words.map((w) => ({ ...w }));
+    for (const s of transcript.segments || []) {
+      if (s.speaker == null) continue;
+      for (let i = s.word_start; i < s.word_end; i++) if (words[i]) words[i].speaker = s.speaker;
+    }
+    return groupLines(projectWords(edl, words));
   }, [transcript, edl]);
 
   useEffect(() => {
@@ -129,6 +141,33 @@ function EditorInner({ videoId, duration }) {
   const seek = (vt) => playerRef.current?.seekVirtual(vt);
   const splitAtPlayhead = () => ops.split(activeVirtual);
 
+  // Editor keyboard shortcuts (ignored while typing in a field).
+  useEffect(() => {
+    function onKey(e) {
+      const el = e.target;
+      if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        e.shiftKey ? redo() : undo();
+      } else if (e.key === " " || e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        playerRef.current?.toggle();
+      } else if (e.key === "ArrowLeft" || e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        seek(Math.max(0, activeVirtual - (e.key === "j" ? 2 : 1)));
+      } else if (e.key === "ArrowRight" || e.key.toLowerCase() === "l") {
+        e.preventDefault();
+        seek(activeVirtual + (e.key === "l" ? 2 : 1));
+      } else if (e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        splitAtPlayhead();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeVirtual, undo, redo]);
+
   async function detectFillers() {
     const res = await fetch(`/api/videos/${videoId}/fillers`);
     if (!res.ok || !transcript) return;
@@ -145,6 +184,32 @@ function EditorInner({ videoId, duration }) {
     const { ranges } = await res.json();
     // Source-time ranges are absolute and independent, so order doesn't matter.
     for (const r of ranges) ops.deleteSourceRange(r.start, r.end);
+  }
+
+  // One-click "Auto-Edit": pick the strongest moment, reframe 9:16, add captions,
+  // clean audio, and trim silence + filler — chaining the pieces we already have.
+  async function autoEdit() {
+    let best = null;
+    try {
+      const d = await (await fetch(`/api/videos/${videoId}/highlights`)).json();
+      if (d.clips && d.clips.length) best = d.clips[0]; // score-ranked, strongest first
+    } catch {
+      /* no highlights yet — Auto-Edit still styles + cleans the full clip */
+    }
+    if (best) {
+      ops.setAll([{ id: newId(), sourceStart: best.start, sourceEnd: best.end }]);
+      setActiveClip({ start: best.start, end: best.end });
+    }
+    setSettings({
+      aspect: "9:16",
+      framing: "auto",
+      enhance_audio: true,
+      background: { mode: "blur", color: "#10121a" },
+      caption: { preset: "karaoke", reveal: "highlight", animation: "pop" },
+    });
+    await removeSilences();
+    await detectFillers();
+    setTab("captions");
   }
 
   function onPreviewClip(c) {
@@ -199,6 +264,7 @@ function EditorInner({ videoId, duration }) {
           {tab === "bg" && <BackgroundPanel settings={settings} setSettings={setSettings} videoId={videoId} />}
           {tab === "overlays" && <OverlaysPanel settings={settings} setSettings={setSettings} />}
           {tab === "audio" && <AudioPanel settings={settings} setSettings={setSettings} />}
+          {tab === "publish" && <PublishPanel videoId={videoId} onAutoEdit={autoEdit} />}
         </Sidebar>
 
         <section className="stage">
@@ -229,7 +295,7 @@ function EditorInner({ videoId, duration }) {
 
           <Toolbar
             onSplit={splitAtPlayhead} onDetectFillers={detectFillers}
-            onRemoveSilences={removeSilences}
+            onRemoveSilences={removeSilences} onAutoEdit={autoEdit}
             onExport={doExport} onExportVertical={doExportVertical}
             undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo}
             saving={saving} saveError={saveError} exporting={exporting}

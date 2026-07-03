@@ -6,6 +6,28 @@ use. Each preset resolves to a full style dict; the renderers interpret it.
 """
 from __future__ import annotations
 
+import os
+
+# Caption fonts. `file` is a TTF the Pillow export loads; `family` is the CSS the
+# canvas preview uses (same face in the browser) so preview == export. Files are
+# existence-checked at resolve time and fall back to the bundled DejaVu, so a
+# missing font never breaks a render on another machine.
+_MAC = "/System/Library/Fonts/Supplemental/"
+FONTS = {
+    "default":     {"label": "Default",     "file": None,                    "family": '"DejaVu Sans", Arial, sans-serif'},
+    "impact":      {"label": "Impact",       "file": _MAC + "Impact.ttf",     "family": 'Impact, "Arial Black", sans-serif'},
+    "arial_black": {"label": "Arial Black",  "file": _MAC + "Arial Black.ttf","family": '"Arial Black", Arial, sans-serif'},
+    "trebuchet":   {"label": "Trebuchet",    "file": _MAC + "Trebuchet MS Bold.ttf", "family": '"Trebuchet MS", sans-serif'},
+    "verdana":     {"label": "Verdana",      "file": _MAC + "Verdana Bold.ttf","family": 'Verdana, sans-serif'},
+    "georgia":     {"label": "Georgia",      "file": _MAC + "Georgia Bold.ttf","family": 'Georgia, "Times New Roman", serif'},
+}
+DEFAULT_FONT = "default"
+
+
+def font_file(name: str) -> str | None:
+    f = FONTS.get(name, FONTS[DEFAULT_FONT])["file"]
+    return f if (f and os.path.exists(f)) else None
+
 ASPECTS = {
     "9:16": {"ratio": 9 / 16, "w": 1080, "h": 1920},
     "1:1": {"ratio": 1.0, "w": 1080, "h": 1080},
@@ -100,4 +122,15 @@ def resolve_caption_style(caption: dict | None) -> dict:
         anim = "pop" if caption.get("animate") else DEFAULT_ANIMATION
     style["animation"] = anim if anim in ANIMATIONS else DEFAULT_ANIMATION
     style["animate"] = style["animation"] != "none"
+    # Font (path for Pillow + CSS family for the preview).
+    fk = caption.get("font", DEFAULT_FONT)
+    if fk not in FONTS:
+        fk = DEFAULT_FONT
+    style["font"] = font_file(fk)
+    style["font_family"] = FONTS[fk]["family"]
+    # Keyword emphasis (Veed "AI Emphasis"): recolour the punchy content words.
+    style["emphasis"] = bool(caption.get("emphasis", False))
+    style["emphasis_color"] = caption.get("emphasis_color", "#ffd400")
+    # Per-speaker colour (pairs with diarization): colour words by who's talking.
+    style["speaker_colors"] = bool(caption.get("speaker_colors", False))
     return style

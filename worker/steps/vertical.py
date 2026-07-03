@@ -219,6 +219,8 @@ def run_vertical_export(job) -> dict:
     settings = json.loads(srow["json"]) if srow else DEFAULT_SETTINGS
     rf = load_reframe(video_id, out_dir)
     words = json.loads(tr["words_json"])
+    from backend.edl import attach_speakers  # per-speaker caption colour, if diarized
+    attach_speakers(words, json.loads(tr["segments_json"]))
 
     result = render_vertical_clip(video, words, segments, settings, rf.get("centers", []), intermediate, final)
     result["face_tracked"] = rf.get("tracked", False) and settings.get("framing", "auto") == "auto"

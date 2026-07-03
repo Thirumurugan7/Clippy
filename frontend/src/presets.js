@@ -51,6 +51,17 @@ export const DEFAULT_REVEAL = "highlight";
 export const ANIMATIONS = ["none", "pop", "bounce", "scale_in", "float_in", "drop_in", "slide_in", "stomp", "pulse"];
 export const DEFAULT_ANIMATION = "none";
 
+// Caption fonts (mirror of presets.py FONTS) — `family` is the CSS the preview uses.
+export const FONTS = [
+  { id: "default", label: "Default", family: '"DejaVu Sans", Arial, sans-serif' },
+  { id: "impact", label: "Impact", family: 'Impact, "Arial Black", sans-serif' },
+  { id: "arial_black", label: "Arial Black", family: '"Arial Black", Arial, sans-serif' },
+  { id: "trebuchet", label: "Trebuchet", family: '"Trebuchet MS", sans-serif' },
+  { id: "verdana", label: "Verdana", family: "Verdana, sans-serif" },
+  { id: "georgia", label: "Georgia", family: 'Georgia, "Times New Roman", serif' },
+];
+const FONT_FAMILY = Object.fromEntries(FONTS.map((f) => [f.id, f.family]));
+
 export function resolveCaptionStyle(caption) {
   caption = caption || {};
   const preset = caption.preset || DEFAULT_PRESET;
@@ -63,5 +74,9 @@ export function resolveCaptionStyle(caption) {
   if (anim == null) anim = caption.animate ? "pop" : DEFAULT_ANIMATION; // legacy fallback
   style.animation = ANIMATIONS.includes(anim) ? anim : DEFAULT_ANIMATION;
   style.animate = style.animation !== "none";
+  style.font_family = FONT_FAMILY[caption.font] || FONT_FAMILY.default;
+  style.emphasis = !!caption.emphasis;
+  style.emphasis_color = caption.emphasis_color || "#ffd400";
+  style.speaker_colors = !!caption.speaker_colors;
   return style;
 }

@@ -27,11 +27,12 @@ from . import auth, config, db
 from .edl import validate_edl, project_words
 from .fillers import detect_fillers
 from .silences import detect_silences, total_silence
-from .presets import ASPECTS, CAPTION_PRESETS, REVEALS, ANIMATIONS
+from .presets import ASPECTS, CAPTION_PRESETS, REVEALS, ANIMATIONS, FONTS
 from .subtitles import group_cues, cues_to_srt, cues_to_vtt
 from .subtitle_edit import replace_cue_words
 from .translate import translate_cues, LANGUAGES
 from .diarize import diarize_segments
+from .social import generate_social
 
 COOKIE = "clippy_session"
 _VIDEO_PATH = re.compile(r"^/api/videos/([0-9a-f]+)")
@@ -559,6 +560,17 @@ def generate_highlights(video_id: str) -> dict:
     return {"job_id": job_id}
 
 
+@app.post("/api/videos/{video_id}/social")
+def social_copy(video_id: str) -> dict:
+    """Generate a hook title, description, and hashtags from the transcript (local gemma4)."""
+    if db.get_video(video_id) is None:
+        raise HTTPException(status_code=404, detail="video not found")
+    try:
+        return generate_social(video_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/videos/{video_id}/highlights")
 def get_highlights(video_id: str) -> dict:
     """Return stored highlight candidates (and the raw model output)."""
@@ -710,6 +722,9 @@ def put_settings(video_id: str, body: SettingsBody) -> dict:
     anim = body.caption.get("animation")
     if anim and anim not in ANIMATIONS:
         raise HTTPException(status_code=400, detail=f"unknown caption animation {anim}")
+    font = body.caption.get("font")
+    if font and font not in FONTS:
+        raise HTTPException(status_code=400, detail=f"unknown caption font {font}")
     db.save_settings(video_id, json.dumps(body.model_dump()))
     return {"ok": True}
 

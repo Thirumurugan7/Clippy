@@ -6,6 +6,7 @@ export function Toolbar({
   onSplit,
   onDetectFillers,
   onRemoveSilences,
+  onAutoEdit,
   onExport,
   onExportVertical,
   undo,
@@ -33,6 +34,7 @@ export function Toolbar({
 
   return (
     <div className="toolbar">
+      <button className="btn-primary" onClick={onAutoEdit} title="Pick the best moment, reframe, caption, and clean — in one pass">✨ Auto-Edit</button>
       <button onClick={onSplit}>Split at playhead</button>
       <button onClick={onDetectFillers}>Remove filler words</button>
       <button onClick={onRemoveSilences}>Remove silences</button>

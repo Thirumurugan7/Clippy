@@ -172,42 +172,61 @@ Legend as above. Sources listed at the bottom of this section.
 These need no cloud, no gated models, no generative video — mostly gemma4 (already
 running) + ffmpeg/opencv (already used). High leverage, on-brand.
 
-- **A1. Virality / engagement score per clip ⬜** — Opus Clip & Klap score every
-  clip 0–100 (hook strength, emotional flow, payoff, trend fit) so creators post
-  the best moments. We already surface AI *highlights* but rank them arbitrarily.
-  *Local:* have gemma4 score each highlight on those axes → sort + show the score.
-  Cheap, big perceived value, differentiates the Highlights rail.
-- **A2. One-click "Auto-Edit" (agentic) ⬜** — Submagic AI Auto-Edit, CapCut
-  Auto-Edit, Descript **Underlord** produce a finished short in one click: pick a
-  moment → reframe → captions → silence/filler cut → enhance audio → hook title.
-  We already have *every one of these pieces* but the user must run them by hand.
-  *Local:* one orchestrator that chains the existing steps into a single "Make me
-  a short" action. Highest leverage — turns our parts into a product.
+- **A1. Virality / engagement score per clip ✅** (2026-07-03) — highlights now
+  rank by gemma4 `score` (strongest hook first) in `parse_highlights`, feeding the
+  existing heat-ring gauge. Future polish: score explicitly on hook/emotion/payoff
+  axes rather than one confidence number.
+- **A2. One-click "Auto-Edit" (agentic) ✅** (2026-07-03) — `autoEdit()` in
+  `EditorPage`: picks the top-ranked highlight → sets the EDL to it → applies good
+  defaults (9:16 auto-reframe, blur bg, karaoke+pop captions, enhance audio) →
+  removes silences + fillers → opens the Captions panel. Surfaced as a ✨ Auto-Edit
+  button in the Toolbar **and** a new **Publish** tool/panel. Reuses every existing
+  step; no backend job needed.
 - **A3. Silence / dead-air removal ✅** (2026-07-01) — Descript Magic Cut,
   Submagic. `backend/silences.py`: ffmpeg `silencedetect` → parsed ranges, padded
   inward so cuts don't clip speech, slivers dropped. `GET …/silences` returns
   source-time ranges + total; "Remove silences" button in the Toolbar drops them
   from the EDL (same review-then-apply flow as filler removal). 7 tests (parser,
   padding, open-ended, real seeded short). 87 backend + 18 frontend green.
-- **A4. AI hook title + social copy ⬜** — Opus, Vizard, Submagic auto-write a
-  title, description, TikTok hook, and hashtags from the transcript. We generate
-  none. *Local:* one gemma4 call per clip → copyable caption/title/hashtags panel.
-- **A5. Keyword-highlight captions ⬜** — Submagic/Vizard highlight the punchy
-  words in a different colour as they're spoken. We animate a word-pop but colour
-  every word the same. *Local:* gemma4 (or a TF-IDF/keyness heuristic) tags
-  emphasis words → renderer colours them (both burn-in + preview).
-- **A6. Auto-emoji captions ⬜** — Vizard/Submagic drop a contextual emoji on the
-  right beat. *Local:* gemma4 picks an emoji per cue; we already bake colour
-  emoji (G11b), so the render path exists.
-- **A7. Auto-zoom / punch-in ⬜** — Submagic/Vizard push in on emphasis beats to
-  add energy. *Local:* deterministic scale-keyframes on emphasis/scene changes in
-  the existing frame loop (opencv). No model needed.
-- **A8. Chapters / show notes / timestamps ⬜** — podcast-tool staple. *Local:*
-  gemma4 over the transcript → chapter markers + summary. Cheap add-on.
-- **A9. Studio-sound-grade audio (de-reverb / stem split) 🟡** — Descript Studio
-  Sound 4.0 separates voice/music and removes reverb. We denoise + loudnorm only.
-  *Local:* de-reverb is doable in ffmpeg; true stem separation wants a model
-  (onnx Demucs-style) — heavier, evaluate before committing.
+- **A4. AI hook title + social copy ✅** (2026-07-03) — `backend/social.py` +
+  `POST …/social`: one strict-JSON gemma4 call → title / hook / description /
+  hashtags (normalised, clamped, safe fallback). Shown in the **Publish** panel as
+  click-to-copy cards. Verified live on the seeded JLPT clip. 4 tests.
+- **A5. Keyword-highlight captions ✅** (2026-07-03) — `is_keyword` heuristic
+  (content word 4+ chars, not a stopword; offline, deterministic) in both
+  renderers; `caption.emphasis` + `caption.emphasis_color` recolour the punchy
+  words. Panel toggle + colour picker. Tests for keyword detection + fill.
+- **A6. Auto-emoji captions ⬜** *(remaining — second wave)* — Vizard/Submagic drop
+  a contextual emoji on the right beat. *Local plan:* a keyword→emoji dictionary
+  (or gemma4 per cue) → append an emoji per caption line; we already bake colour
+  emoji (G11b), so the render path exists. Touch: `captions.py` line render +
+  `captionLayout.js` + a `caption.auto_emoji` setting + panel toggle + tests.
+- **A7. Auto-zoom / punch-in ⬜** *(remaining — second wave)* — Submagic/Vizard
+  push in on emphasis beats. *Local plan:* deterministic scale-keyframes (ease in/
+  out) on the active caption line or scene changes, applied in the vertical export
+  frame loop (`_reframe_and_caption` crop rect) + a matching preview transform;
+  `caption`/`settings.zoom` toggle + intensity. No model needed.
+- **A8. Chapters / show notes / timestamps ⬜** *(remaining — second wave)* —
+  podcast staple. *Local plan:* gemma4 over the transcript → `{chapters:[{t,title}],
+  summary}`; `POST …/chapters`; show in the Publish panel (copyable), optionally
+  export as a YouTube-style timestamp list. Cheap add-on next to `social.py`.
+- **A9. Studio-sound-grade audio (de-reverb / stem split) 🟡** *(remaining)* —
+  Descript Studio Sound 4.0 separates voice/music and removes reverb. We denoise +
+  loudnorm only. *Local:* de-reverb is doable in ffmpeg (`afftdn` tuning / an
+  arnndn model); true stem separation wants an onnx Demucs-style model — heavier,
+  evaluate before committing. Lower priority.
+
+### Caption polish shipped alongside (2026-07-02/03)
+Not from the original scan, but done while in the caption engine — worth logging:
+- **Caption types (reveal)** ✅ — Highlight / Word build / One word / Clean line
+  (Descript Karaoke/Clean/word-by-word). `caption.reveal`, both renderers.
+- **Caption motion** ✅ — None/Pop/Bounce/Scale in/Float up/Drop in/Slide in/Stomp/
+  Pulse (Veed's named animations). `caption.animation` + `word_anim` in both
+  renderers (scale+offset+alpha), preview==export. Panel "Motion" chips.
+- **Caption fonts** ✅ — Impact / Arial Black / Trebuchet / Verdana / Georgia +
+  Default. `presets.FONTS` (existence-checked TTF + CSS family), `caption.font`.
+- **Per-speaker caption colour** ✅ — pairs with diarization; `caption.speaker_colors`
+  colours words by speaker in burn-in + preview (`attach_speakers` + `project_words`).
 
 ### Group B — Generative / cloud-heavy (stays deferred, not Clippy's niche)
 Real features, but they need big generative models, stock libraries, or a cloud
@@ -234,6 +253,31 @@ account — against the local-first promise. Tracked, not planned.
   current decision.
 - **Multi-camera / sequences (G9)** — large editor change; on hold.
 - **Cross-segment crossfades** — small, still open (see G11b note).
+
+### ⭐ NEXT WAVE — pick up here (all local-first, scoped)
+The concrete backlog to resume with. Ordered rough priority.
+1. **A6 Auto-emoji captions** — keyword→emoji dict (or gemma4/cue); append per
+   caption line; `caption.auto_emoji` toggle. Render path exists (colour-emoji bake).
+2. **A7 Auto-zoom / punch-in** — scale-keyframes on emphasis beats in the export
+   crop loop + preview transform; `settings.zoom` toggle + intensity.
+3. **A8 Chapters / show notes** — `POST …/chapters` (gemma4) → chapters + summary
+   in the Publish panel; optional YouTube timestamp export. Sits next to `social.py`.
+4. **Drag caption position** — drag the caption block in the preview to set
+   `caption.x`/`caption.y` offsets (both renderers honour them); replaces the
+   bottom/center/top dropdown as the primary control.
+5. **Timeline zoom + snapping** — zoom control on the timeline dock; snap trims/
+   splits to word boundaries. Builds on the ruler already shipped.
+6. **Per-platform export presets** — one-click "Export for TikTok/Reels/Shorts"
+   in the export menu (aspect + caption position + safe-area already exist via
+   CropPanel platform chips; wire them into export).
+7. **A9 Studio-sound de-reverb** — ffmpeg dereverb tuning; stem split needs a model
+   (evaluate). Lower priority.
+8. **A1 score axes** — score highlights on explicit hook/emotion/payoff axes, not
+   one confidence number.
+- Housekeeping: **a large body of work is uncommitted on `main`** (translation,
+  diarization, silence removal, redesign + icons + bright theme, caption
+  types/motion/fonts/emphasis/speaker colour, Auto-Edit, social copy, keyboard
+  shortcuts). Branch + commit before the next wave.
 
 **Sources:** [Opus Clip](https://www.opus.pro/) · [Opus AI B-Roll](https://www.opus.pro/ai-b-roll) ·
 [Submagic](https://www.submagic.co/) · [Vizard top clipping tools 2026](https://vizard.ai/blog/top-5-ai-clipping-tools-2026) ·
@@ -295,6 +339,13 @@ account — against the local-first promise. Tracked, not planned.
   auto-zoom, chapters, studio-sound) vs Group B (generative/cloud — B-roll,
   avatars, text-to-video, voice cloning/dub, thumbnails, outpaint, scheduler).
   G8/G9 on hold. Awaiting a call on where to concentrate.
+- 2026-07-02/03 — Big batch shipped (110 backend + 18 frontend green): caption
+  **types** (reveal) + **motion** (9 Veed animations) + **fonts** + **keyword
+  emphasis** + **per-speaker colour**; **A1** score ranking, **A2** one-click
+  Auto-Edit, **A4** social copy (Publish panel); **A3** silence removal; editor
+  **keyboard shortcuts** + **timeline ruler/scrub**; full **UI redesign** (bright
+  theme + line-icon set). Remaining "next wave" list added above (A6/A7/A8, drag
+  caption position, timeline zoom, export presets, A9). All still uncommitted on main.
 - 2026-07-01 — ✅ A3 silence/dead-air removal shipped (`silences.py` +
   `GET …/silences` + Toolbar "Remove silences"; ffmpeg silencedetect, padded,
   review-then-apply). 87 backend + 18 frontend green. Group A remaining: A1
